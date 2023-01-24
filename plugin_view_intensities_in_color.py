@@ -38,11 +38,28 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
 
     _maximum_intensity: Optional[float]
     _intensity_colormap: Colormap = matplotlib.cm.get_cmap("jet")
+    _intensity_key: str
 
     def __init__(self, window: Window):
         super().__init__(window)
-        self._check_for_intensities()
+        self._intensity_key = self._check_for_intensities()
         self._experiment.links.sort_tracks_by_x()
+
+    def get_extra_menu_options(self) -> Dict[str, Any]:
+        intensity_keys = self._get_available_intensity_keys()
+        if len(intensity_keys) == 1 and next(iter(intensity_keys)) == self._intensity_key:
+            return dict()  # No need to show a selection menu
+
+        return_value = dict()
+        for intensity_key in intensity_keys:
+            return_value["Intensity//Selector-" + intensity_key] = lambda: self._set_intensity_key(intensity_key)
+        return return_value
+
+    def _set_intensity_key(self, new_key: str):
+        self._intensity_key = new_key
+        self._calculate_time_point_metadata()
+        self.draw_view()
+        self.update_status("Now viewing intensities stored with the key \"" + self._intensity_key + "\" .")
 
     def _must_show_other_time_points(self) -> bool:
         return False
@@ -51,7 +68,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         # Calculates the maximum intensity of this time point
         max_intensity = None
         for position in self._experiment.positions.of_time_point(self._time_point):
-            max_intensity = max_none(max_intensity, intensity_calculator.get_normalized_intensity(self._experiment, position))
+            max_intensity = max_none(max_intensity, intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key))
         self._maximum_intensity = max_intensity
 
     def _on_position_draw(self, position: Position, color: str, dz: int, dt: int) -> bool:
@@ -82,9 +99,16 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         self.update_status(f"The intensity of {selected_position} was measured as {intensity:.2f}, which is {percentage:.1f}% of"
                            f"the maximum of this time point")
 
-    def _check_for_intensities(self):
-        """Displays a message if there are no recorded intensities."""
-        if not self._experiment.position_data.has_position_data_with_name("intensity")\
-                or not self._experiment.position_data.has_position_data_with_name("intensity_volume"):
+    def _get_available_intensity_keys(self) -> Set[str]:
+        intensity_keys = set()
+        for experiment in self._window.get_active_experiments():
+            intensity_keys |= set(intensity_calculator.get_intensity_keys(experiment))
+        return intensity_keys
+
+    def _check_for_intensities(self) -> str:
+        """Displays a message if there are no recorded intensities. Returns the key for one intensity."""
+        intensity_keys = self._get_available_intensity_keys()
+        if len(intensity_keys) == 0:
             dialog.popup_error("No intensities recorded", "No intensities are recorded. Please do so"
                                                           " first from the main screen.")
+        return intensity_keys.pop()

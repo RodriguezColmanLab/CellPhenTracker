@@ -60,14 +60,17 @@ class _RecordIntensitiesTask(Task):
     _radius_um: float
     _measurement_channel_1: ImageChannel
     _measurement_channel_2: Optional[ImageChannel]
+    _intensity_key: str
 
-    def __init__(self, experiment: Experiment, radius_um: float, measurement_channel_1: ImageChannel, measurement_channel_2: Optional[ImageChannel]):
+    def __init__(self, experiment: Experiment, radius_um: float, measurement_channel_1: ImageChannel, measurement_channel_2: Optional[ImageChannel],
+                 intensity_key: str):
         # Make copy of experiment - so that we can safely work on it in another thread
         self._experiment_original = experiment
         self._experiment_copy = experiment.copy_selected(images=True, positions=True)
         self._radius_um = radius_um
         self._measurement_channel_1 = measurement_channel_1
         self._measurement_channel_2 = measurement_channel_2
+        self._intensity_key = intensity_key
 
     def compute(self) -> Dict[Position, int]:
         results = dict()
@@ -99,7 +102,7 @@ class _RecordIntensitiesTask(Task):
         sphere_volume_px3 = _create_spherical_mask(self._radius_um, resolution).count_pixels()
         volumes = dict(((position, sphere_volume_px3) for position in result.keys()))
 
-        intensity_calculator.set_raw_intensities(self._experiment_original, result, volumes)
+        intensity_calculator.set_raw_intensities(self._experiment_original, result, volumes, intensity_key=self._intensity_key)
         dialog.popup_message("Intensities recorded", "All intensities have been recorded.\n\n"
                                                      "Your next step is likely to set a normalization. This can be\n"
                                                      "done from the Intensity menu in the main screen of the program.")
@@ -113,6 +116,7 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
     _channel_1: Optional[ImageChannel] = None
     _channel_2: Optional[ImageChannel] = None
     _nucleus_radius_um: float = 3
+    _intensity_key: str = intensity_calculator.DEFAULT_INTENSITY_KEY
 
     def __init__(self, window: Window):
         super().__init__(window)
@@ -123,7 +127,8 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
             "Edit//Channels-Record intensities...": self._record_intensities,
             "Parameters//Channel-Set first channel...": self._set_channel,
             "Parameters//Channel-Set second channel (optional)...": self._set_channel_two,
-            "Parameters//Radius-Set nucleus radius...": self._set_nucleus_radius,
+            "Parameters//Other-Set nucleus radius...": self._set_nucleus_radius,
+            "Parameters//Other-Set storage key...": self._set_intensity_key,
         }
 
     def _set_channel(self):
@@ -176,6 +181,16 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
             self._nucleus_radius_um = new_radius
             self.refresh_data()  # Redraws the spheres
 
+    def _set_intensity_key(self):
+        """Prompts the user for a new intensity key."""
+        new_key = dialog.prompt_str("Storage key",
+                                    "Under what key should the intensities be stored?"
+                                    "\nYou can choose a different value than the default if you want"
+                                    " to maintain different sets of intensities.",
+                                    default=self._intensity_key)
+        if new_key is not None and len(new_key) > 0:
+            self._intensity_key = new_key
+
     def _on_position_draw(self, position: Position, color: str, dz: int, dt: int) -> bool:
         if dt != 0:
             return True
@@ -203,10 +218,14 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
         if self._channel_2 is not None and self._channel_2 not in channels:
             raise UserError("Invalid second channel", "The selected second channel is no longer available."
                                                       " Please select a new one in the Parameters menu.")
-        if not dialog.prompt_confirmation("Intensities", "Warning: previous intensities will be overwritten."
-                                                         " This cannot be undone. Do you want to continue?"):
-            return
+        if self._experiment.position_data.has_position_data_with_name(self._intensity_key):
+            if not dialog.prompt_confirmation("Intensities", "Warning: previous intensities stored under the key "
+                                                             "\""+self._intensity_key+"\" will be overwritten.\n\n"
+                                                             "This cannot be undone. Do you want to continue?\n\n"
+                                                             "If you press Cancel, you can go back and choose a"
+                                                             " different key in the Parameters menu."):
+                return
 
         self._window.get_scheduler().add_task(
-            _RecordIntensitiesTask(self._experiment, self._nucleus_radius_um, self._channel_1, self._channel_2))
+            _RecordIntensitiesTask(self._experiment, self._nucleus_radius_um, self._channel_1, self._channel_2, self._intensity_key))
         self.update_status("Started recording all intensities...")

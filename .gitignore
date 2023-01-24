@@ -1,2 +1,5 @@
 # IntelliJ folder
 .idea/
+
+# Python dust
+*.pyc
