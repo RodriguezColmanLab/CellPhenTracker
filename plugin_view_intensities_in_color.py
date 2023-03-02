@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Optional, Dict, Any, Set, List
 
 import matplotlib.cm
@@ -48,11 +49,11 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
     def get_extra_menu_options(self) -> Dict[str, Any]:
         intensity_keys = self._get_available_intensity_keys()
         if len(intensity_keys) == 1 and next(iter(intensity_keys)) == self._intensity_key:
-            return dict()  # No need to show a selection menu
+            return super().get_extra_menu_options()  # No need to show a selection menu
 
-        return_value = dict()
+        return_value = super().get_extra_menu_options().copy()
         for intensity_key in intensity_keys:
-            return_value["Intensity//Selector-" + intensity_key] = lambda: self._set_intensity_key(intensity_key)
+            return_value["Intensity//Selector-" + intensity_key] = partial(self._set_intensity_key, intensity_key)
         return return_value
 
     def _set_intensity_key(self, new_key: str):
@@ -78,7 +79,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
 
         if dt != 0:
             return False  # ignore other time points
-        intensity = intensity_calculator.get_normalized_intensity(self._experiment, position)
+        intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key)
         if intensity is None:
             return False
         intensity_fraction = float(intensity / self._maximum_intensity)
@@ -88,13 +89,11 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
 
     def _on_mouse_click(self, event: MouseEvent):
         # Prints the intensity of a cell
-        self._check_for_intensities()
-
         selected_position = self._get_position_at(event.xdata, event.ydata)
         if selected_position is None or self._maximum_intensity is None:
             return
 
-        intensity = intensity_calculator.get_normalized_intensity(self._experiment, selected_position)
+        intensity = intensity_calculator.get_normalized_intensity(self._experiment, selected_position, intensity_key=self._intensity_key)
         percentage = intensity / self._maximum_intensity * 100
         self.update_status(f"The intensity of {selected_position} was measured as {intensity:.2f}, which is {percentage:.1f}% of"
                            f"the maximum of this time point")
@@ -111,4 +110,5 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         if len(intensity_keys) == 0:
             dialog.popup_error("No intensities recorded", "No intensities are recorded. Please do so"
                                                           " first from the main screen.")
+            return intensity_calculator.DEFAULT_INTENSITY_KEY
         return intensity_keys.pop()
