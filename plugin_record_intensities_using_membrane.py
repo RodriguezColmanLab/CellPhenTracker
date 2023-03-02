@@ -170,7 +170,7 @@ class _ExportSegmentationTask(Task):
             del watershed_image
 
             # Save the image
-            tifffile.imwrite(os.path.join(self._output_folder, f"image_t{time_point.time_point_number()}.tif"), watershed_image_correct_colors, compress=9)
+            tifffile.imwrite(os.path.join(self._output_folder, f"image_t{time_point.time_point_number()}.tif"), watershed_image_correct_colors, compression=tifffile.COMPRESSION.ADOBE_DEFLATE, compressionargs={"level": 9})
         return 0
 
     def on_finished(self, result: int):
