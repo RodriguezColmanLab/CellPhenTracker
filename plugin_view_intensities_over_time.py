@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Optional, Dict, Any, Set, List
 
 import matplotlib.cm
@@ -46,7 +47,7 @@ def get_menu_items(window: Window) -> Dict[str, Any]:
         return_value = dict()
         for intensity_key in intensity_keys:
             return_value["Intensity//View-View intensities over time//" + intensity_key] \
-                = lambda: _view_intensities(window, intensity_key)
+                = partial(_view_intensities, window, intensity_key)
         return return_value
 
 
@@ -122,16 +123,17 @@ class _PlotData:
             for line in self._lines
         ]
 
-    def plot_lines(self, ax: Axes):
+    def plot_lines(self, ax: Axes, raw_lines: bool):
         for line in self._lines:
-            if len(self._lines) < 3:
+            if len(self._lines) < 3 or raw_lines:
                 ax.plot(line.times_h, line.intensities, color="gray")  # For plotting raw data
-            average = MovingAverage(line.times_h, line.intensities, window_width=_AVERAGING_WINDOW_H,
-                                    x_step_size=_STEP_SIZE_H)
-            if len(average.x_values) < 1:
-                continue
-            ax.text(average.x_values[-1], average.mean_values[-1], f"Track {line.track_id}", fontsize=6)
-            average.plot(ax, label=None, color=Color(9, 132, 227))
+            if not raw_lines:
+                average = MovingAverage(line.times_h, line.intensities, window_width=_AVERAGING_WINDOW_H,
+                                        x_step_size=_STEP_SIZE_H)
+                if len(average.x_values) < 1:
+                    continue
+                ax.text(average.x_values[-1], average.mean_values[-1], f"Track {line.track_id}", fontsize=6)
+                average.plot(ax, label=None, color=Color(9, 132, 227))
 
 
 class _IntensityOverTimePlotter(ExitableImageVisualizer):
@@ -143,7 +145,6 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
     def __init__(self, window: Window, intensity_key: str):
         super().__init__(window)
         self._selected_tracks = set()
-        self._check_for_intensities()
         self._experiment.links.sort_tracks_by_x()
         self._intensity_key = intensity_key
 
@@ -200,7 +201,7 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
     def _plot_total_intensities(self):
         experiment = self._experiment
         resolution = experiment.images.resolution()
-        plot_data = _PlotData(y_display_name="Intensity (pixel sum)", y_machine_name="intensities")
+        plot_data = _PlotData(y_display_name=self._intensity_key, y_machine_name=self._intensity_key)
         for track in self._selected_tracks:
             positions = list(track.positions(connect_to_previous_track=True))
             intensities = [
@@ -213,7 +214,12 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
     def _plot_volumes(self):
         resolution = self._experiment.images.resolution()
         position_data = self._experiment.position_data
-        plot_data = _PlotData(y_display_name="Intensity measurement volume (pixels)", y_machine_name="volumes")
+        if not position_data.has_position_data_with_name(self._intensity_key + "_volume"):
+            raise UserError("No measurement volume", "The volume in which the value \"" + self._intensity_key
+                            + "\" was measured, is not known. This is because we didn't find any data for \""
+                            + self._intensity_key + "_volume\".")
+
+        plot_data = _PlotData(y_display_name="Measurement volume (pixels)", y_machine_name="volumes")
         for track in self._selected_tracks:
             positions = list(track.positions(connect_to_previous_track=True))
             volumes = [position_data.get_position_data(position, self._intensity_key + "_volume")
@@ -226,7 +232,7 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
     def _plot_raw_intensities(self):
         resolution = self._experiment.images.resolution()
         position_data = self._experiment.position_data
-        plot_data = _PlotData(y_display_name="Intensity (value per pixel)", y_machine_name="intensities_per_pixel")
+        plot_data = _PlotData(y_display_name=self._intensity_key, y_machine_name="intensities")
         for track in self._selected_tracks:
             positions = list(track.positions(connect_to_previous_track=True))
 
@@ -236,14 +242,14 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
 
             plot_data.add_line(resolution, positions, intensities, self._experiment.links.get_track_id(track))
 
-        self._plot_line(plot_data)
+        self._plot_line(plot_data, raw_lines=True)
 
-    def _plot_line(self, plot_data: _PlotData):
+    def _plot_line(self, plot_data: _PlotData, *, raw_lines: bool = False):
         self._assert_intensities_and_selection()
 
         def plot(figure: Figure):
             ax: Axes = figure.gca()
-            plot_data.plot_lines(ax)
+            plot_data.plot_lines(ax, raw_lines=raw_lines)
             ax.set_xlabel("Time (h)")
             ax.set_ylabel(plot_data.y_display_name)
 
@@ -255,17 +261,9 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
         dialog.popup_figure(self.get_window().get_gui_experiment(), plot, export_function=export,
                             size_cm=(11, 6))
 
-    def _check_for_intensities(self):
-        """Displays a message if there are no recorded intensities."""
-        if not self._experiment.position_data.has_position_data_with_name("intensity") \
-                or not self._experiment.position_data.has_position_data_with_name("intensity_volume"):
-            dialog.popup_error("No intensities recorded", "No intensities are recorded. Please do so"
-                                                          " first from the main screen.")
-
     def _assert_intensities_and_selection(self):
         """Throws UserError if there are no intensities, or if no position has been selected."""
-        if not self._experiment.position_data.has_position_data_with_name("intensity") \
-                or not self._experiment.position_data.has_position_data_with_name("intensity_volume"):
+        if not self._experiment.position_data.has_position_data_with_name(self._intensity_key):
             raise UserError("No intensities recorded", "No intensities are recorded.\n"
                                                        "Please go back to the main screen and\n"
                                                        "record some intensities first.")
