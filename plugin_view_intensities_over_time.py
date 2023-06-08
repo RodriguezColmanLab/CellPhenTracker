@@ -1,13 +1,11 @@
 from functools import partial
 from typing import Optional, Dict, Any, Set, List
 
-import matplotlib.cm
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseEvent
-from matplotlib.colors import Colormap
 from matplotlib.figure import Figure
 
-from organoid_tracker.core import UserError, Color, max_none
+from organoid_tracker.core import UserError, Color
 from organoid_tracker.core.links import LinkingTrack
 from organoid_tracker.core.position import Position
 from organoid_tracker.core.resolution import ImageResolution
@@ -18,7 +16,7 @@ from organoid_tracker.util.moving_average import MovingAverage
 from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
 
-_AVERAGING_WINDOW_H = 4
+_AVERAGING_WINDOW_TIME_STEPS = 20
 _STEP_SIZE_H = 0.2
 
 
@@ -123,12 +121,12 @@ class _PlotData:
             for line in self._lines
         ]
 
-    def plot_lines(self, ax: Axes, raw_lines: bool):
+    def plot_lines(self, ax: Axes, averaging_window_h: float):
         for line in self._lines:
-            if len(self._lines) < 3 or raw_lines:
+            if len(self._lines) < 3 or averaging_window_h <= 0:
                 ax.plot(line.times_h, line.intensities, color="gray")  # For plotting raw data
-            if not raw_lines:
-                average = MovingAverage(line.times_h, line.intensities, window_width=_AVERAGING_WINDOW_H,
+            if averaging_window_h > 0:
+                average = MovingAverage(line.times_h, line.intensities, window_width=averaging_window_h,
                                         x_step_size=_STEP_SIZE_H)
                 if len(average.x_values) < 1:
                     continue
@@ -247,9 +245,12 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
     def _plot_line(self, plot_data: _PlotData, *, raw_lines: bool = False):
         self._assert_intensities_and_selection()
 
+        resolution = self._experiment.images.resolution()
+        averaging_window_h = 0 if raw_lines else _AVERAGING_WINDOW_TIME_STEPS * resolution.time_point_interval_h
+
         def plot(figure: Figure):
             ax: Axes = figure.gca()
-            plot_data.plot_lines(ax, raw_lines=raw_lines)
+            plot_data.plot_lines(ax, averaging_window_h=averaging_window_h)
             ax.set_xlabel("Time (h)")
             ax.set_ylabel(plot_data.y_display_name)
 
