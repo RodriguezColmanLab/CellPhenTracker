@@ -137,7 +137,6 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
 
     def __init__(self, window: Window):
         super().__init__(window)
-        window.display_settings.show_reconstruction = True
 
         # Initialize or random colormap
         source_colormap: Colormap = matplotlib.cm.jet
@@ -226,8 +225,7 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
         resolution = self._experiment.images.resolution(allow_incomplete=True)
         positions = list(self._experiment.positions.of_time_point(self._time_point))
 
-        if self._channel_1 is None or resolution.is_incomplete() or len(positions) == 0\
-                or not self._display_settings.show_reconstruction:
+        if self._channel_1 is None or resolution.is_incomplete() or len(positions) == 0:
             # Not all information is present
             self._overlay_image = None
             return
@@ -247,6 +245,9 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
             return
 
         self._overlay_image = _create_watershed_image(self._nucleus_radius_um, positions, original_image, resolution)
+
+    def should_show_image_reconstruction(self) -> bool:
+        return self._overlay_image is not None
 
     def reconstruct_image(self, time_point: TimePoint, z: int, rgb_canvas_2d: ndarray):
         """Draws the labels in color to the rgb image."""
@@ -271,9 +272,3 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
         colored = colored.reshape((rgb_canvas_3d.shape[0], rgb_canvas_3d.shape[1], rgb_canvas_3d.shape[2], 4))
         rgb_canvas_3d[:, :, :, :] += colored[:, :, :, 0:3]
         rgb_canvas_3d.clip(min=0, max=1, out=rgb_canvas_3d)
-
-    def _exit_view(self):
-        # Reconstruction in main screen is a different one, so turn this off
-        self._display_settings.show_reconstruction = False
-
-        super()._exit_view()

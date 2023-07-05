@@ -134,11 +134,6 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
             "Parameters//Other-Set storage key...": self._set_intensity_key,
         }
 
-    def _calculate_time_point_metadata(self):
-        # Turn on segmentation display when all necessary channels are set
-        if self._segmented_channel is not None and self._channel_1 is not None:
-            self._display_settings.show_reconstruction = True
-
     def _set_intensity_key(self):
         """Prompts the user for a new intensity key."""
         new_key = dialog.prompt_str("Storage key",
@@ -214,6 +209,13 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
             _RecordIntensitiesTask(self._experiment, self._segmented_channel, self._channel_1, self._channel_2))
         self.update_status("Started recording all intensities...")
 
+    def should_show_image_reconstruction(self) -> bool:
+        if self._segmented_channel is None:
+            return False # Nothing to draw
+        if self._display_settings.image_channel not in {self._channel_1, self._channel_2, self._segmented_channel}:
+            return False # Nothing to draw for this channel
+        return True
+
     def reconstruct_image(self, time_point: TimePoint, z: int, rgb_canvas_2d: ndarray):
         """Draws the labels in color to the rgb image."""
         if self._segmented_channel is None:
@@ -254,9 +256,3 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         colored = colored.reshape((rgb_canvas_3d.shape[0], rgb_canvas_3d.shape[1], rgb_canvas_3d.shape[2], 4))
         rgb_canvas_3d[:, :, :, :] += colored[:, :, :, 0:3]
         rgb_canvas_3d.clip(min=0, max=1, out=rgb_canvas_3d)
-
-    def _exit_view(self):
-        # Reconstruction in main screen is a different one, so turn this off
-        self._display_settings.show_reconstruction = False
-
-        super()._exit_view()

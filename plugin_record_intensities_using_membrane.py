@@ -7,6 +7,7 @@ import mahotas
 import matplotlib.colors
 import matplotlib.cm
 import numpy
+import skimage.morphology
 import tifffile
 from numpy import ndarray
 
@@ -61,7 +62,7 @@ def _get_organoid_mask(membrane_image: ndarray) -> ndarray:
 
     # Make the mask a bit smaller
     for z in range(membrane_mask_image.shape[0]):
-        membrane_mask_image[z] = cv2.erode(membrane_mask_image[z], kernel=numpy.ones((8, 8)))
+        membrane_mask_image[z] = skimage.morphology.erosion(membrane_mask_image[z], footprint=numpy.ones((8, 8)))
 
     return membrane_mask_image
 
@@ -326,7 +327,6 @@ class _NucleusSegmentationVisualizer(ExitableImageVisualizer):
                                               maximum=channel_count,
                                               default=current_channel + 1)
         if new_channel_index is not None:
-            self._window.display_settings.show_reconstruction = True
             self._membrane_channel = ImageChannel(index_zero=new_channel_index - 1)
             self.refresh_data()
 
@@ -369,8 +369,7 @@ class _NucleusSegmentationVisualizer(ExitableImageVisualizer):
         resolution = self._experiment.images.resolution(allow_incomplete=True)
         positions = list(self._experiment.positions.of_time_point(self._time_point))
 
-        if resolution.is_incomplete() or len(positions) == 0 or self._membrane_channel is None or\
-                not self._display_settings.show_reconstruction:
+        if resolution.is_incomplete() or len(positions) == 0 or self._membrane_channel is None:
             # Not all information is present
             self._overlay_image = None
             return
@@ -387,6 +386,9 @@ class _NucleusSegmentationVisualizer(ExitableImageVisualizer):
                                                                         max_size=median_volume * _MAX_FACTOR_FROM_MEDIAN)
         watershed_image[mahotas.labeled.borders(watershed_image)] = 0
         self._overlay_image = Image(watershed_image, image_offset)
+
+    def should_show_image_reconstruction(self) -> bool:
+        return self._overlay_image is not None
 
     def reconstruct_image(self, time_point: TimePoint, z: int, rgb_canvas_2d: ndarray):
         """Draws the labels in color to the rgb image."""
