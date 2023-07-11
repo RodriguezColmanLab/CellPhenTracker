@@ -133,43 +133,37 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
 
     def _set_channel(self):
         """Prompts the user for a new value of self._channel1."""
-        channels = self._experiment.images.get_channels()
-        current_channel = 0
-        try:
-            current_channel = channels.index(self._channel_1)
-        except ValueError:
-            pass
-        channel_count = len(channels)
+        current_channel = self._window.display_settings.image_channel
+        if self._channel_1 is not None:
+            current_channel = self._channel_1
+        channel_count = len(self._experiment.images.get_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use"
                                                                   f" (1-{channel_count}, inclusive)?", minimum=1,
                                               maximum=channel_count,
-                                              default=current_channel + 1)
+                                              default=current_channel.index_one)
         if new_channel_index is not None:
-            self._channel_1 = channels[new_channel_index - 1]
+            self._channel_1 = ImageChannel(index_zero=new_channel_index - 1)
             self.refresh_data()
 
     def _set_channel_two(self):
         """Prompts the user for a new value of either self._channel2.
         """
-        channels = self._experiment.images.get_channels()
-        current_channel = 0
-        try:
-            current_channel = channels.index(self._channel_2)
-        except ValueError:
-            pass
-        channel_count = len(channels)
+        current_channel = self._window.display_settings.image_channel
+        if self._channel_2 is not None:
+            current_channel = self._channel_2
+        channel_count = len(self._experiment.images.get_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use as the denominator"
                                                                   f" (1-{channel_count}, inclusive)?\n\nIf you don't want to compare two"
                                                                   f" channels, and just want to\nview one channel, set this value to 0.",
                                               minimum=0, maximum=channel_count,
-                                              default=current_channel + 1)
+                                              default=current_channel.index_one)
         if new_channel_index is not None:
             if new_channel_index == 0:
                 self._channel_2 = None
             else:
-                self._channel_2 = channels[new_channel_index - 1]
+                self._channel_2 = ImageChannel(index_zero=new_channel_index -1)
             self.refresh_data()
 
     def _set_nucleus_radius(self):
