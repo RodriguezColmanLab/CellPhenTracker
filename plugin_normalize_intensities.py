@@ -13,6 +13,8 @@ def get_menu_items(window: Window) -> Dict[str, Any]:
             lambda: _normalize_with_background_and_z(window),
         "Intensity//Record-Normalize intensities//Normalize with background correction...":
             lambda: _normalize_with_background(window),
+        "Intensity//Record-Normalize intensities//Normalize with time correction...":
+            lambda: _normalize_with_time(window),
         "Intensity//Record-Normalize intensities//Normalize without corrections...":
             lambda: _normalize_without_background(window),
         "Intensity//Record-Normalize intensities//Remove normalization...":
@@ -83,6 +85,24 @@ def _normalize_with_background(window: Window):
             intensity_calculator.perform_intensity_normalization(experiment, background_correction=True,
                                                                  z_correction=False, intensity_key=intensity_key)
         tab.undo_redo.mark_unsaved_changes()
+
+
+def _normalize_with_time(window: Window):
+    _verify_saved_intensities(window)
+    if not dialog.popup_message_cancellable("Normalization", "The normalization of the intensities will be changed.\n"
+                                            "The intensities will be multiplied to obtain\n"
+                                            "a median intensity of 1 at every time point."):
+        return
+
+    intensity_keys = _prompt_intensity_keys(window)
+    for tab in window.get_gui_experiment().get_active_tabs():
+        experiment = tab.experiment
+        for intensity_key in intensity_keys:
+            intensity_calculator.perform_intensity_normalization(experiment, background_correction=False,
+                                                                 z_correction=False, time_correction=True,
+                                                                 intensity_key=intensity_key)
+        tab.undo_redo.mark_unsaved_changes()
+
 
 
 def _normalize_without_background(window: Window):
