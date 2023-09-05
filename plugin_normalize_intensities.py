@@ -42,15 +42,16 @@ def _prompt_intensity_keys(window: Window) -> List[str]:
     intensity_keys = list(_get_all_intensity_keys(window))
 
     if len(intensity_keys) > 1:
-        intensity_keys = option_choose_dialog.prompt_list_multiple("Intensities", "We found multiple intensities. Which"
+        intensity_key_indices = option_choose_dialog.prompt_list_multiple("Intensities", "We found multiple intensities. Which"
                                                                    " ones should we normalize? Select all that apply",
                                                                    "Intensity keys:", intensity_keys)
-        if intensity_keys is None:
+        if intensity_key_indices is None:
             return []  # Cancelled
-        if len(intensity_keys) == 0:
+        if len(intensity_key_indices) == 0:
             # User pressed OK, but didn't select anything. Likely in error, so notify the user.
             raise UserError("No keys selected", "No intensity keys were selected. Please check the boxes of the"
                                                 " intensities that you want to normalize.")
+        return [intensity_keys[i] for i in intensity_key_indices]
     return intensity_keys
 
 def _normalize_with_background_and_z(window: Window):
@@ -108,7 +109,7 @@ def _normalize_with_time(window: Window):
 def _normalize_without_background(window: Window):
     _verify_saved_intensities(window)
     if not dialog.popup_message_cancellable("Normalization", "All intensities will be normalized. No background\n"
-                                            "correction is used. Still, the intensities have been multiplied to\n"
+                                            "correction is used. Still, the intensities will be multiplied to\n"
                                             "obtain an overall median intensity of 1."):
         return
 
