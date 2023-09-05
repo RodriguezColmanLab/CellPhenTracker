@@ -33,14 +33,6 @@ def _view_intensities(window: Window):
     activate(_SeedSegmentationVisualizer(window))
 
 
-def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> Optional[int]:
-    mask.center_around(position)
-    if mask.count_pixels() == 0:
-        return None
-    masked_image = mask.create_masked_image(intensity_image)
-    return int(masked_image.sum())
-
-
 def _create_watershed_image(max_radius_um: float, positions: List[Position], original_image: Image, resolution: ImageResolution) -> Image:
     """Creates a watershed image. Any label - 2 corresponds to the index in the positions list."""
 
