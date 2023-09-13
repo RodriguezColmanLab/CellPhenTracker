@@ -24,20 +24,20 @@ def get_menu_items(window: Window) -> Dict[str, Any]:
     if len(intensity_keys) == 0:
         # Just show an error message if clicked
         return {
-            "Intensity//View-View intensities over time...":
+            "Intensity//View-View average intensities over time...":
                 lambda: dialog.popup_error("No intensities recorded",
                                            "No intensities were recorded. Please do so first")
         }
     elif len(intensity_keys) == 1:
         # Just use the only intensity
         return {
-            "Intensity//View-View intensities over time...": lambda: _view_intensities(window, intensity_keys.pop())
+            "Intensity//View-View average intensities over time...": lambda: _view_intensities(window, intensity_keys.pop())
         }
     else:
         # Separate menu option for each
         return_value = dict()
         for intensity_key in intensity_keys:
-            return_value["Intensity//View-View intensities over time//" + intensity_key] \
+            return_value["Intensity//View-View average intensities over time//" + intensity_key] \
                 = partial(_view_intensities, window, intensity_key)
         return return_value
 
