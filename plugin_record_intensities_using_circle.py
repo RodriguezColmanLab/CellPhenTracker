@@ -78,9 +78,13 @@ class _RecordIntensitiesTask(Task):
 
             # Load images
             measurement_image_1 = self._experiment_copy.images.get_image(time_point, self._measurement_channel_1)
+            if measurement_image_1 is None:
+                continue  # Skip this time point, image is missing
             measurement_image_2 = None
             if self._measurement_channel_2 is not None:
                 measurement_image_2 = self._experiment_copy.images.get_image(time_point, self._measurement_channel_2)
+                if measurement_image_2 is None:
+                    continue  # Skip this time point, image is missing
 
             # Calculate intensities
             for position in self._experiment_copy.positions.of_time_point(time_point):
