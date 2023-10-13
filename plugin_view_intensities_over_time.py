@@ -8,7 +8,7 @@ from matplotlib.figure import Figure
 from organoid_tracker.core import UserError, Color
 from organoid_tracker.core.links import LinkingTrack
 from organoid_tracker.core.position import Position
-from organoid_tracker.core.resolution import ImageResolution
+from organoid_tracker.core.resolution import ImageResolution, ImageTimings
 from organoid_tracker.gui import dialog
 from organoid_tracker.gui.window import Window
 from organoid_tracker.position_analysis import intensity_calculator
@@ -59,14 +59,14 @@ class _Line:
     positions: List[Position]
     track_id: int
 
-    def __init__(self, resolution: ImageResolution, positions: List[Position], intensities: List[Optional[float]],
+    def __init__(self, timings: ImageTimings, positions: List[Position], intensities: List[Optional[float]],
                  track_id: int):
         self.times_h = list()
         self.intensities = list()
         self.positions = list()
         for position, intensity in zip(positions, intensities):
             if intensity is not None:
-                time_h = position.time_point_number() * resolution.time_point_interval_h
+                time_h = timings.get_time_h_since_start(position.time_point_number())
                 self.times_h.append(time_h)
                 self.intensities.append(intensity)
                 self.positions.append(position)
@@ -102,10 +102,10 @@ class _PlotData:
         self.y_display_name = y_display_name
         self._lines = list()
 
-    def add_line(self, resolution: ImageResolution, positions: List[Position], y_values: List[Optional[float]],
+    def add_line(self, timings: ImageTimings, positions: List[Position], y_values: List[Optional[float]],
                  track_id: int):
         """Adds the intensity line of a single cell."""
-        line = _Line(resolution, positions, y_values, track_id)
+        line = _Line(timings, positions, y_values, track_id)
         if len(line.times_h) > 0:
             # Only add if there are full data points (neighbor connections, recorded intensities, etc)
             self._lines.append(line)
@@ -198,19 +198,19 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
 
     def _plot_total_intensities(self):
         experiment = self._experiment
-        resolution = experiment.images.resolution()
+        timings = experiment.images.timings()
         plot_data = _PlotData(y_display_name=self._intensity_key, y_machine_name=self._intensity_key)
         for track in self._selected_tracks:
             positions = list(track.positions(connect_to_previous_track=True))
             intensities = [
                 intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=self._intensity_key)
                 for position in track.positions(connect_to_previous_track=True)]
-            plot_data.add_line(resolution, positions, intensities, self._experiment.links.get_track_id(track))
+            plot_data.add_line(timings, positions, intensities, self._experiment.links.get_track_id(track))
 
         self._plot_line(plot_data)
 
     def _plot_volumes(self):
-        resolution = self._experiment.images.resolution()
+        timings = self._experiment.images.timings()
         position_data = self._experiment.position_data
         if not position_data.has_position_data_with_name(self._intensity_key + "_volume"):
             raise UserError("No measurement volume", "The volume in which the value \"" + self._intensity_key
@@ -223,12 +223,12 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
             volumes = [position_data.get_position_data(position, self._intensity_key + "_volume")
                        for position in track.positions(connect_to_previous_track=True)]
 
-            plot_data.add_line(resolution, positions, volumes, self._experiment.links.get_track_id(track))
+            plot_data.add_line(timings, positions, volumes, self._experiment.links.get_track_id(track))
 
         self._plot_line(plot_data)
 
     def _plot_raw_intensities(self):
-        resolution = self._experiment.images.resolution()
+        timings = self._experiment.images.timings()
         position_data = self._experiment.position_data
         plot_data = _PlotData(y_display_name=self._intensity_key, y_machine_name="intensities")
         for track in self._selected_tracks:
@@ -238,7 +238,7 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
             intensities = [position_data.get_position_data(position, self._intensity_key)
                            for position in track.positions(connect_to_previous_track=True)]
 
-            plot_data.add_line(resolution, positions, intensities, self._experiment.links.get_track_id(track))
+            plot_data.add_line(timings, positions, intensities, self._experiment.links.get_track_id(track))
 
         self._plot_line(plot_data, raw_lines=True)
 

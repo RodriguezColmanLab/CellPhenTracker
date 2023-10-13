@@ -71,7 +71,7 @@ def _plot(figure: Figure, all_intensities: List[_IntensitiesOfExperiment]):
 
 
 def _collect_intensities(experiment: Experiment, intensity_key: str):
-    resolution = experiment.images.resolution()
+    timings = experiment.images.timings()
 
     times_h = list()
     mean_values = list()
@@ -84,7 +84,7 @@ def _collect_intensities(experiment: Experiment, intensity_key: str):
                 intensities.append(intensity)
 
         if len(intensities) > 0:
-            times_h.append(time_point.time_point_number() * resolution.time_point_interval_h)
+            times_h.append(timings.get_time_h_since_start(time_point))
             mean_values.append(numpy.mean(intensities))
             std_values.append(numpy.std(intensities, ddof=1) if len(intensities) > 1 else 0)
 
