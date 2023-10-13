@@ -50,14 +50,17 @@ class _RecordIntensitiesTask(Task):
     _segmentation_channel: ImageChannel
     _measurement_channel_1: ImageChannel
     _measurement_channel_2: Optional[ImageChannel]
+    _intensity_key: str
 
-    def __init__(self, experiment: Experiment, segmentation_channel: ImageChannel, measurement_channel_1: ImageChannel, measurement_channel_2: Optional[ImageChannel]):
+    def __init__(self, experiment: Experiment, segmentation_channel: ImageChannel, measurement_channel_1: ImageChannel,
+                 measurement_channel_2: Optional[ImageChannel], intensity_key: str):
         # Make copy of experiment - so that we can safely work on it in another thread
         self._experiment_original = experiment
         self._experiment_copy = experiment.copy_selected(images=True, positions=True)
         self._segmentation_channel = segmentation_channel
         self._measurement_channel_1 = measurement_channel_1
         self._measurement_channel_2 = measurement_channel_2
+        self._intensity_key = intensity_key
 
     def compute(self) -> Tuple[Dict[Position, int], Dict[Position, int]]:
         intensities = dict()
@@ -95,7 +98,8 @@ class _RecordIntensitiesTask(Task):
     def on_finished(self, result: Tuple[Dict[Position, int], Dict[Position, int]]):
         intensities, volume_px3 = result
 
-        intensity_calculator.set_raw_intensities(self._experiment_original, intensities, volume_px3)
+        intensity_calculator.set_raw_intensities(self._experiment_original, intensities, volume_px3,
+                                                 intensity_key=self._intensity_key)
         dialog.popup_message("Intensities recorded", "All intensities have been recorded.\n\n"
                                                      "Your next step is likely to set a normalization. This can be\n"
                                                      "done from the Intensity menu in the main screen of the program.")
@@ -110,7 +114,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
     _segmented_channel: Optional[ImageChannel] = None
     _channel_1: Optional[ImageChannel] = None
     _channel_2: Optional[ImageChannel] = None
-    _intensity_key: str
+    _intensity_key: str = intensity_calculator.DEFAULT_INTENSITY_KEY
     _label_colormap: Colormap
 
     def __init__(self, window: Window):
@@ -201,12 +205,17 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         if self._channel_2 is not None and self._channel_2 not in channels:
             raise UserError("Invalid second channel", "The selected second measurement channel is no longer available."
                                                       " Please select a new one in the Parameters menu.")
-        if not dialog.prompt_confirmation("Intensities", "Warning: previous intensities will be overwritten."
-                                                         " This cannot be undone. Do you want to continue?"):
-            return
+        if self._experiment.position_data.has_position_data_with_name(self._intensity_key):
+            if not dialog.prompt_confirmation("Intensities", "Warning: previous intensities stored under the key "
+                                                             "\""+self._intensity_key+"\" will be overwritten.\n\n"
+                                                             "This cannot be undone. Do you want to continue?\n\n"
+                                                             "If you press Cancel, you can go back and choose a"
+                                                             " different key in the Parameters menu."):
+                return
 
         self._window.get_scheduler().add_task(
-            _RecordIntensitiesTask(self._experiment, self._segmented_channel, self._channel_1, self._channel_2))
+            _RecordIntensitiesTask(self._experiment, self._segmented_channel, self._channel_1, self._channel_2,
+                                   self._intensity_key))
         self.update_status("Started recording all intensities...")
 
     def should_show_image_reconstruction(self) -> bool:
