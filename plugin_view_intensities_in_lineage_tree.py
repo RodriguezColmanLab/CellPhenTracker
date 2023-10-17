@@ -70,6 +70,8 @@ class IntensityLineageTreeVisualizer(LineageTreeVisualizer):
                 for position in experiment.positions.of_time_point(time_point):
                     intensity = intensity_calculator.get_normalized_intensity(self._experiment, position,
                                                                               intensity_key=self._intensity_key)
+                    if intensity is None:
+                        continue
                     if min_value is None or intensity < min_value:
                         min_value = intensity
                     if max_value is None or intensity > max_value:
