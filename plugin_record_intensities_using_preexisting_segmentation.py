@@ -62,7 +62,7 @@ class _RecordIntensitiesTask(Task):
         self._measurement_channel_2 = measurement_channel_2
         self._intensity_key = intensity_key
 
-    def compute(self) -> Tuple[Dict[Position, int], Dict[Position, int]]:
+    def compute(self) -> Tuple[Dict[Position, float], Dict[Position, int]]:
         intensities = dict()
         volumes_px3 = dict()
         for time_point in self._experiment_copy.positions.time_points():
@@ -87,15 +87,15 @@ class _RecordIntensitiesTask(Task):
                 if index == 0:
                     continue
                 props = props_by_label[index]
-                intensity = int(numpy.sum(measurement_image_1.array[props.slice] * props.image))
+                intensity = numpy.sum(measurement_image_1.array[props.slice] * props.image) / props.area
                 if measurement_image_2 is not None:
-                    intensity_2 = int(numpy.sum(measurement_image_2.array[props.slice] * props.image))
+                    intensity_2 = numpy.sum(measurement_image_2.array[props.slice] * props.image) / props.area
                     intensity /= intensity_2
-                intensities[position] = intensity
+                intensities[position] = float(intensity)
                 volumes_px3[position] = props.area
         return intensities, volumes_px3
 
-    def on_finished(self, result: Tuple[Dict[Position, int], Dict[Position, int]]):
+    def on_finished(self, result: Tuple[Dict[Position, float], Dict[Position, int]]):
         intensities, volume_px3 = result
 
         intensity_calculator.set_raw_intensities(self._experiment_original, intensities, volume_px3,
@@ -107,7 +107,7 @@ class _RecordIntensitiesTask(Task):
 
 class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
     """First, specify the segmentation channel (containing a pre-segmented image) and the measurement channel in the
-    Parameters menu. Then, use Edit -> Record intensities.
+    Parameters menu. Then, use Edit -> Record intensities to record the average intensities.
 
     If you don't have pre-segmented images loaded yet, exit this view and use Edit -> Append image channel.
     """
