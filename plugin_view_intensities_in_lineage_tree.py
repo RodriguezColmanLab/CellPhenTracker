@@ -193,27 +193,27 @@ class IntensityLineageTreeVisualizer(LineageTreeVisualizer):
             # Sort by track x
             links = self._experiment.links
             links.sort_tracks_by_x()
-            return list(links.find_all_tracks())
+            return list(links.find_starting_tracks())
 
         # Sort by intensity
-        tracks = list(self._experiment.links.find_all_tracks())
+        starting_tracks = list(self._experiment.links.find_starting_tracks())
 
         key = self._intensity_sorting_key
         experiment = self._experiment
         intensity_by_track = dict()
-        for track in tracks:
+        for starting_track in starting_tracks:
             intensities = list()
-            for position in track.positions():
+            for position in starting_track.positions():
                 intensity = intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=key)
                 if intensity is not None:
                     intensities.append(intensity)
             if len(intensities) > 0:
-                intensity_by_track[track] = sum(intensities) / len(intensities)
+                intensity_by_track[starting_track] = sum(intensities) / len(intensities)
             else:
-                intensity_by_track[track] = 0
+                intensity_by_track[starting_track] = 0
 
-        tracks.sort(key=lambda t: intensity_by_track[t], reverse=True)
-        return tracks
+        starting_tracks.sort(key=lambda t: intensity_by_track[t], reverse=True)
+        return starting_tracks
 
     def _get_custom_color(self, position: Position) -> Optional[Color]:
         intensity = intensity_calculator.get_normalized_intensity(self._experiment, position,
