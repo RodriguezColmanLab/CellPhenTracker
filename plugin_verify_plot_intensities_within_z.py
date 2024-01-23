@@ -34,7 +34,7 @@ def _draw_intensities_by_z(figure: Figure, time_point: Optional[TimePoint],
     ax_index = 0
     for intensity_key, values_by_z in intensities_by_name_and_z.items():
         ax = axes[ax_index]
-        ax.set_ylabel("Intensity (a.u.)")
+        ax.set_ylabel("Intensity/px (a.u.)")
         ax.set_xlabel("Z (px)")
         ax.set_title(intensity_key)
 
@@ -73,7 +73,7 @@ def _plot_intensities_single_time_point(window: Window):
 
             for position in experiment.positions.of_time_point(time_point):
                 intensity = intensity_calculator.get_normalized_intensity(experiment, position,
-                                                                          intensity_key=intensity_key)
+                                                                          intensity_key=intensity_key, per_pixel=True)
                 if intensity is None:
                     continue
                 z = int(round(position.z))
@@ -95,7 +95,7 @@ def _plot_intensities_all_time_points(window: Window):
 
             for position, _ in experiment.position_data.find_all_positions_with_data(intensity_key):
                 intensity = intensity_calculator.get_normalized_intensity(experiment, position,
-                                                                          intensity_key=intensity_key)
+                                                                          intensity_key=intensity_key, per_pixel=True)
                 if intensity is None:
                     continue
                 z = int(round(position.z))

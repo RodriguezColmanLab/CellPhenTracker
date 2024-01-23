@@ -35,7 +35,7 @@ def _draw_intensities_by_z(figure: Figure, intensities_by_name_and_z: Dict[str, 
         ax.fill_between(z_values, intensity_means - intensity_stds, intensity_means + intensity_stds, color=color, alpha=0.4)
         i += 1
 
-    ax.set_ylabel("Intensity (a.u.)")
+    ax.set_ylabel("Intensity/px (a.u.)")
     ax.set_xlabel("Z (px)")
     if len(intensities_by_name_and_z) > 1:
         ax.legend()
@@ -49,7 +49,8 @@ def _plot_intensities_by_z(window: Window):
                 intensities_by_name_and_z[intensity_key] = defaultdict(list)
 
             for position, _ in experiment.position_data.find_all_positions_with_data(intensity_key):
-                intensity = intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=intensity_key)
+                intensity = intensity_calculator.get_normalized_intensity(experiment, position,
+                                                                          intensity_key=intensity_key, per_pixel=True)
                 if intensity is None:
                     continue
                 z = int(round(position.z))

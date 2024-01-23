@@ -1,7 +1,8 @@
 """Uses a simple sphere of a given radius for segmentation"""
 import math
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
+import numpy
 from matplotlib.patches import Ellipse
 
 from organoid_tracker.core import UserError, bounding_box
@@ -29,12 +30,11 @@ def _view_intensities(window: Window):
     activate(_SphereSegmentationVisualizer(window))
 
 
-def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> Optional[int]:
+def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> Tuple[int, int]:
+    """Gets the intensity and the volume in px."""
     mask.center_around(position)
-    if mask.count_pixels() == 0:
-        return None
-    masked_image = mask.create_masked_image(intensity_image)
-    return int(masked_image.sum())
+    masked_image = mask.create_masked_image_nan(intensity_image)
+    return int(numpy.nansum(masked_image)), int(numpy.sum(~numpy.isnan(masked_image)))
 
 
 def _create_spherical_mask(radius_um: float, resolution: ImageResolution) -> Mask:
@@ -72,8 +72,9 @@ class _RecordIntensitiesTask(Task):
         self._measurement_channel_2 = measurement_channel_2
         self._intensity_key = intensity_key
 
-    def compute(self) -> Dict[Position, int]:
-        results = dict()
+    def compute(self) -> Tuple[Dict[Position, int], Dict[Position, int]]:
+        results_intensity = dict()
+        results_volume = dict()
         spherical_mask = _create_spherical_mask(self._radius_um, self._experiment_copy.images.resolution())
         for time_point in self._experiment_copy.positions.time_points():
 
@@ -89,24 +90,24 @@ class _RecordIntensitiesTask(Task):
 
             # Calculate intensities
             for position in self._experiment_copy.positions.of_time_point(time_point):
-                intensity = _get_intensity(position, measurement_image_1, spherical_mask)
-                if intensity is not None and self._measurement_channel_2 is not None:
-                    intensity_2 = _get_intensity(position, measurement_image_2, spherical_mask)
-                    if intensity_2 is None:
+                intensity, volume = _get_intensity(position, measurement_image_1, spherical_mask)
+                if volume > 0 and self._measurement_channel_2 is not None:
+                    intensity_2, volume_2 = _get_intensity(position, measurement_image_2, spherical_mask)
+                    if volume_2 != volume:
                         intensity = None
                     else:
                         intensity /= intensity_2
                 if intensity is not None:
-                    results[position] = intensity
-        return results
+                    results_intensity[position] = intensity
+                    results_volume[position] = volume
+        return results_intensity, results_volume
 
-    def on_finished(self, result: Dict[Position, int]):
+    def on_finished(self, result: Tuple[Dict[Position, int], Dict[Position, int]]):
         # Record volumes too, for administrative purposes
-        resolution = self._experiment_copy.images.resolution()
-        sphere_volume_px3 = _create_spherical_mask(self._radius_um, resolution).count_pixels()
-        volumes = dict(((position, sphere_volume_px3) for position in result.keys()))
+        intensities, volumes_px = result
 
-        intensity_calculator.set_raw_intensities(self._experiment_original, result, volumes, intensity_key=self._intensity_key)
+        intensity_calculator.set_raw_intensities(self._experiment_original, intensities, volumes_px,
+                                                 intensity_key=self._intensity_key)
         dialog.popup_message("Intensities recorded", "All intensities have been recorded.\n\n"
                                                      "Your next step is likely to set a normalization. This can be\n"
                                                      "done from the Intensity menu in the main screen of the program.")

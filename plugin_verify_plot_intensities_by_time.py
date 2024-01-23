@@ -52,7 +52,7 @@ def _draw_intensities_by_t(figure: Figure, timings: Optional[ImageTimings], inte
         ax.fill_between(t_values, intensity_means - intensity_stds, intensity_means + intensity_stds, color=color, alpha=0.4)
         i += 1
 
-    ax.set_ylabel("Intensity (a.u.)")
+    ax.set_ylabel("Intensity/px (a.u.)")
     if timings is None:
         ax.set_xlabel("Time (time points)")
     else:
@@ -81,7 +81,8 @@ def _plot_intensities_by_t(window: Window):
                 intensities_by_name_and_t[intensity_key] = defaultdict(list)
 
             for position, _ in experiment.position_data.find_all_positions_with_data(intensity_key):
-                intensity = intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=intensity_key)
+                intensity = intensity_calculator.get_normalized_intensity(experiment, position,
+                                                                          intensity_key=intensity_key, per_pixel=True)
                 if intensity is None:
                     continue
                 intensities_by_name_and_t[intensity_key][position.time_point_number()].append(intensity)

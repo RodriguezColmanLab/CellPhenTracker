@@ -51,7 +51,7 @@ def _draw_intensities_by_cell_cycle(figure: Figure, intensities_by_name: Dict[st
 
     if len(intensities_by_name) > 1:
         ax.legend()
-    ax.set_ylabel("Intensity (a.u.)")
+    ax.set_ylabel("Intensity/px (a.u.)")
     ax.set_xlabel("Time (h)")
 
 
@@ -91,7 +91,8 @@ def _plot_intensities_by_cell_cycle(window: Window):
 
                 for position in track.positions():
                     intensity = intensity_calculator.get_normalized_intensity(experiment, position,
-                                                                              intensity_key=intensity_key)
+                                                                              intensity_key=intensity_key,
+                                                                              per_pixel=True)
                     if intensity is None:
                         continue
 
