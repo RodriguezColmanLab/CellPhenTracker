@@ -27,8 +27,9 @@ def _draw_intensities_by_z(figure: Figure, intensities_by_name_and_z: Dict[str, 
         intensity_means = numpy.full_like(z_values, fill_value=numpy.nan, dtype=numpy.float64)
         intensity_stds = numpy.full_like(z_values, fill_value=numpy.nan, dtype=numpy.float64)
         for z, values in values_by_z.items():
-            intensity_means[z] = numpy.mean(values)
-            intensity_stds[z] = numpy.std(values, ddof=1)
+            z_index = z - z_values[0]
+            intensity_means[z_index] = numpy.mean(values)
+            intensity_stds[z_index] = numpy.std(values, ddof=1)
 
         color = SANDER_APPROVED_COLORS[i % len(SANDER_APPROVED_COLORS)]
         ax.plot(z_values, intensity_means, label=intensity_key, color=color, linewidth=3)
