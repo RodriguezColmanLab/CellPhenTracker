@@ -156,7 +156,7 @@ class _ExportSegmentationTask(Task):
 
                 # Add back ids
                 for id, track in self._experiment_copy.links.find_all_tracks_and_ids():
-                    if time_point.time_point_number() >= track.min_time_point_number() and time_point.time_point_number() <= track.max_time_point_number():
+                    if time_point.time_point_number() >= track.first_time_point_number() and time_point.time_point_number() <= track.last_time_point_number():
                         position = track.find_position_at_time_point_number(time_point.time_point_number())
                         try:
                             old_index = positions.index(position) + 1

@@ -84,8 +84,8 @@ def _plot_intensities_by_cell_cycle(window: Window):
                 delta_time_with_end_h = list()
                 intensities = list()
 
-                previous_division_h = timings.get_time_h_since_start(track.min_time_point_number() - 1)
-                next_division_h = timings.get_time_h_since_start(track.max_time_point_number())
+                previous_division_h = timings.get_time_h_since_start(track.first_time_point_number() - 1)
+                next_division_h = timings.get_time_h_since_start(track.last_time_point_number())
                 division_before = _has_divided(track)
                 division_after = track.will_divide()
 
