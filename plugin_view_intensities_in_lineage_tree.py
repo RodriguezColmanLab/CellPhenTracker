@@ -218,7 +218,7 @@ class IntensityLineageTreeVisualizer(LineageTreeVisualizer):
     def _get_custom_color(self, position: Position) -> Optional[Color]:
         intensity = intensity_calculator.get_normalized_intensity(self._experiment, position,
                                                                   intensity_key=self._intensity_key)
-        if intensity is None:
+        if intensity is None or self._intensity_min_value == self._intensity_max_value:
             return self._intensity_nan_color
 
         intensity = (intensity - self._intensity_min_value) / (self._intensity_max_value - self._intensity_min_value)
