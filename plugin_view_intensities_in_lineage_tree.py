@@ -202,11 +202,13 @@ class IntensityLineageTreeVisualizer(LineageTreeVisualizer):
         experiment = self._experiment
         intensity_by_track = dict()
         for starting_track in starting_tracks:
+            starting_track_with_daughters = {starting_track} | starting_track.get_next_tracks()
             intensities = list()
-            for position in starting_track.positions():
-                intensity = intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=key)
-                if intensity is not None:
-                    intensities.append(intensity)
+            for track in starting_track_with_daughters:
+                for position in track.positions():
+                    intensity = intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=key)
+                    if intensity is not None:
+                        intensities.append(intensity)
             if len(intensities) > 0:
                 intensity_by_track[starting_track] = sum(intensities) / len(intensities)
             else:
