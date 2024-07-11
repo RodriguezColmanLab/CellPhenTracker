@@ -1,8 +1,7 @@
-"""Uses a simple sphere of a given radius for segmentation"""
 import random
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple, List, Set
 
 import matplotlib.cm
 import numpy
@@ -15,9 +14,10 @@ from organoid_tracker.core import UserError, TimePoint
 from organoid_tracker.core.experiment import Experiment
 from organoid_tracker.core.image_loader import ImageChannel
 from organoid_tracker.core.position import Position
-from organoid_tracker.gui import dialog
-from organoid_tracker.gui.threading import Task
+from organoid_tracker.gui import dialog, worker_job
+from organoid_tracker.gui.gui_experiment import SingleGuiTab
 from organoid_tracker.gui.window import Window
+from organoid_tracker.gui.worker_job import WorkerJob
 from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
@@ -128,11 +128,9 @@ def _by_label(region_props: List["skimage.measure._regionprops.RegionProperties"
     return return_value
 
 
-class _RecordIntensitiesTask(Task):
+class _RecordIntensitiesJob(WorkerJob):
     """Records the intensities of all positions."""
 
-    _experiment_original: Experiment
-    _experiment_copy: Experiment
     _segmentation_channel: ImageChannel
     _measurement_channel_1: ImageChannel
     _measurement_channel_2: Optional[ImageChannel]
@@ -140,12 +138,9 @@ class _RecordIntensitiesTask(Task):
     _mask_processing_size: int
     _intensity_key: str
 
-    def __init__(self, experiment: Experiment, segmentation_channel: ImageChannel, measurement_channel_1: ImageChannel,
+    def __init__(self, segmentation_channel: ImageChannel, measurement_channel_1: ImageChannel,
                  measurement_channel_2: Optional[ImageChannel], *, mask_processing_mode: _MaskProcessingMode,
                  mask_processing_size: int, intensity_key: str):
-        # Make copy of experiment - so that we can safely work on it in another thread
-        self._experiment_original = experiment
-        self._experiment_copy = experiment.copy_selected(images=True, positions=True)
         self._segmentation_channel = segmentation_channel
         self._measurement_channel_1 = measurement_channel_1
         self._measurement_channel_2 = measurement_channel_2
@@ -153,18 +148,21 @@ class _RecordIntensitiesTask(Task):
         self._mask_processing_size = mask_processing_size
         self._intensity_key = intensity_key
 
-    def compute(self) -> Tuple[Dict[Position, float], Dict[Position, int]]:
+    def copy_experiment(self, experiment: Experiment) -> Experiment:
+        return experiment.copy_selected(images=True, positions=True)
+
+    def gather_data(self, experiment_copy: Experiment) -> Tuple[Dict[Position, float], Dict[Position, int]]:
         intensities = dict()
         volumes_px3 = dict()
-        for time_point in self._experiment_copy.positions.time_points():
+        for time_point in experiment_copy.positions.time_points():
             print(f"Working on time point {time_point.time_point_number()}...")
 
             # Load images
-            label_image = self._experiment_copy.images.get_image(time_point, self._segmentation_channel)
-            measurement_image_1 = self._experiment_copy.images.get_image(time_point, self._measurement_channel_1)
+            label_image = experiment_copy.images.get_image(time_point, self._segmentation_channel)
+            measurement_image_1 = experiment_copy.images.get_image(time_point, self._measurement_channel_1)
             measurement_image_2 = None
             if self._measurement_channel_2 is not None:
-                measurement_image_2 = self._experiment_copy.images.get_image(time_point, self._measurement_channel_2)
+                measurement_image_2 = experiment_copy.images.get_image(time_point, self._measurement_channel_2)
                 if measurement_image_2 is None:
                     continue  # Skip this time point, an image is missing
 
@@ -174,7 +172,7 @@ class _RecordIntensitiesTask(Task):
             # Calculate intensities
             processed_labels = self._mask_processing_mode.process_mask_3d(label_image.array, self._mask_processing_size)
             props_by_label = _by_label(skimage.measure.regionprops(processed_labels))
-            for position in self._experiment_copy.positions.of_time_point(time_point):
+            for position in experiment_copy.positions.of_time_point(time_point):
                 index = label_image.value_at(position)
                 if index == 0:
                     continue
@@ -187,11 +185,13 @@ class _RecordIntensitiesTask(Task):
                 volumes_px3[position] = props.area
         return intensities, volumes_px3
 
-    def on_finished(self, result: Tuple[Dict[Position, float], Dict[Position, int]]):
-        intensities, volume_px3 = result
-
-        intensity_calculator.set_raw_intensities(self._experiment_original, intensities, volume_px3,
+    def use_data(self, tab: SingleGuiTab, data: Tuple[Dict[Position, float], Dict[Position, int]]):
+        intensities, volume_px3 = data
+        intensity_calculator.set_raw_intensities(tab.experiment, intensities, volume_px3,
                                                  intensity_key=self._intensity_key)
+        tab.undo_redo.mark_unsaved_changes()
+
+    def on_finished(self, results: Any):
         dialog.popup_message("Intensities recorded", "All intensities have been recorded.\n\n"
                                                      "Your next step is likely to set a normalization. This can be\n"
                                                      "done from the Intensity menu in the main screen of the program.")
@@ -277,24 +277,22 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
 
     def _set_measurement_channel_one(self):
         """Prompts the user for a new value of self._channel1."""
-        channels = self._experiment.images.get_channels()
         current_channel = self._channel_1 if self._channel_1 is not None else self._display_settings.image_channel
-        channel_count = len(channels)
+        channel_count = len(self._find_available_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use"
                                                                   f" (1-{channel_count}, inclusive)?", minimum=1,
                                               maximum=channel_count,
                                               default=current_channel.index_one)
         if new_channel_index is not None:
-            self._channel_1 = channels[new_channel_index - 1]
+            self._channel_1 = ImageChannel(index_zero=new_channel_index - 1)
             self.refresh_data()
 
     def _set_measurement_channel_two(self):
         """Prompts the user for a new value of either self._channel2.
         """
-        channels = self._experiment.images.get_channels()
         current_channel = self._channel_2 if self._channel_2 is not None else self._display_settings.image_channel
-        channel_count = len(channels)
+        channel_count = len(self._find_available_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use as the denominator"
                                                                   f" (1-{channel_count}, inclusive)?\n\nIf you don't want to compare two"
@@ -305,11 +303,25 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
             if new_channel_index == 0:
                 self._channel_2 = None
             else:
-                self._channel_2 = channels[new_channel_index - 1]
+                self._channel_2 = ImageChannel(index_zero=new_channel_index - 1)
             self.refresh_data()
 
+    def _find_available_channels(self) -> Set[ImageChannel]:
+        """Finds all channels that are available in all open experiments."""
+        channels = set()
+        for experiment in self._window.get_active_experiments():
+            for channel in experiment.images.get_channels():
+                channels.add(channel)
+        return channels
+
+    def _intensity_key_already_exists(self, key: str) -> bool:
+        for experiment in self._window.get_active_experiments():
+            if experiment.position_data.has_position_data_with_name(key):
+                return True
+        return False
+
     def _record_intensities(self):
-        channels = self._experiment.images.get_channels()
+        channels = self._find_available_channels()
         if self._segmented_channel is None or self._segmented_channel not in channels:
             raise UserError("Invalid segmentation channel", "Please set a segmentation channel in the Parameters menu.")
         if self._channel_1 is None or self._channel_1 not in channels:
@@ -318,7 +330,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         if self._channel_2 is not None and self._channel_2 not in channels:
             raise UserError("Invalid second channel", "The selected second measurement channel is no longer available."
                                                       " Please select a new one in the Parameters menu.")
-        if self._experiment.position_data.has_position_data_with_name(self._intensity_key):
+        if self._intensity_key_already_exists(self._intensity_key):
             if not dialog.prompt_confirmation("Intensities", "Warning: previous intensities stored under the key "
                                                              "\""+self._intensity_key+"\" will be overwritten.\n\n"
                                                              "This cannot be undone. Do you want to continue?\n\n"
@@ -326,10 +338,10 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
                                                              " different key in the Parameters menu."):
                 return
 
-        self._window.get_scheduler().add_task(
-            _RecordIntensitiesTask(self._experiment, self._segmented_channel, self._channel_1, self._channel_2,
-                                   intensity_key=self._intensity_key, mask_processing_mode=self._mask_processing_mode,
-                                   mask_processing_size=self._mask_processing_size))
+        worker_job.submit_job(self._window,
+            _RecordIntensitiesJob(self._segmented_channel, self._channel_1, self._channel_2,
+                                  intensity_key=self._intensity_key, mask_processing_mode=self._mask_processing_mode,
+                                  mask_processing_size=self._mask_processing_size))
         self.update_status("Started recording all intensities...")
 
     def should_show_image_reconstruction(self) -> bool:

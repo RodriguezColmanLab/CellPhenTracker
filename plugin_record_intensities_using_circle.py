@@ -1,6 +1,6 @@
-"""Uses a simple sphere of a given radius for segmentation"""
+"""Uses a simple circle of a given radius for segmentation"""
 import math
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set
 
 from matplotlib.patches import Ellipse
 
@@ -11,9 +11,10 @@ from organoid_tracker.core.images import Image
 from organoid_tracker.core.mask import Mask
 from organoid_tracker.core.position import Position
 from organoid_tracker.core.resolution import ImageResolution
-from organoid_tracker.gui import dialog
-from organoid_tracker.gui.threading import Task
+from organoid_tracker.gui import dialog, worker_job
+from organoid_tracker.gui.gui_experiment import SingleGuiTab
 from organoid_tracker.gui.window import Window
+from organoid_tracker.gui.worker_job import WorkerJob
 from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
@@ -51,46 +52,44 @@ def _create_circular_mask(radius_um: float, resolution: ImageResolution) -> Mask
     return mask
 
 
-class _RecordIntensitiesTask(Task):
+class _RecordIntensitiesJob(WorkerJob):
     """Records the intensities of all positions."""
 
-    _experiment_original: Experiment
-    _experiment_copy: Experiment
     _radius_um: float
     _measurement_channel_1: ImageChannel
     _measurement_channel_2: Optional[ImageChannel]
     _intensity_key: str
 
-    def __init__(self, experiment: Experiment, radius_um: float, measurement_channel_1: ImageChannel,
+    def __init__(self, radius_um: float, measurement_channel_1: ImageChannel,
                  measurement_channel_2: Optional[ImageChannel], intensity_key: str):
-        # Make copy of experiment - so that we can safely work on it in another thread
-        self._experiment_original = experiment
-        self._experiment_copy = experiment.copy_selected(images=True, positions=True)
         self._radius_um = radius_um
         self._measurement_channel_1 = measurement_channel_1
         self._measurement_channel_2 = measurement_channel_2
         self._intensity_key = intensity_key
 
-    def compute(self) -> Dict[Position, int]:
+    def copy_experiment(self, experiment: Experiment) -> Experiment:
+        return experiment.copy_selected(positions=True, images=True)
+
+    def gather_data(self, experiment_copy: Experiment) -> Dict[Position, int]:
         results = dict()
-        spherical_mask = _create_circular_mask(self._radius_um, self._experiment_copy.images.resolution())
-        for time_point in self._experiment_copy.positions.time_points():
+        circular_mask = _create_circular_mask(self._radius_um, experiment_copy.images.resolution())
+        for time_point in experiment_copy.positions.time_points():
 
             # Load images
-            measurement_image_1 = self._experiment_copy.images.get_image(time_point, self._measurement_channel_1)
+            measurement_image_1 = experiment_copy.images.get_image(time_point, self._measurement_channel_1)
             if measurement_image_1 is None:
                 continue  # Skip this time point, image is missing
             measurement_image_2 = None
             if self._measurement_channel_2 is not None:
-                measurement_image_2 = self._experiment_copy.images.get_image(time_point, self._measurement_channel_2)
+                measurement_image_2 = experiment_copy.images.get_image(time_point, self._measurement_channel_2)
                 if measurement_image_2 is None:
                     continue  # Skip this time point, image is missing
 
             # Calculate intensities
-            for position in self._experiment_copy.positions.of_time_point(time_point):
-                intensity = _get_intensity(position, measurement_image_1, spherical_mask)
+            for position in experiment_copy.positions.of_time_point(time_point):
+                intensity = _get_intensity(position, measurement_image_1, circular_mask)
                 if intensity is not None and self._measurement_channel_2 is not None:
-                    intensity_2 = _get_intensity(position, measurement_image_2, spherical_mask)
+                    intensity_2 = _get_intensity(position, measurement_image_2, circular_mask)
                     if intensity_2 is None:
                         intensity = None
                     else:
@@ -99,13 +98,19 @@ class _RecordIntensitiesTask(Task):
                     results[position] = intensity
         return results
 
-    def on_finished(self, result: Dict[Position, int]):
-        # Record volumes too, for administrative purposes
-        resolution = self._experiment_copy.images.resolution()
-        circle_volume_px3 = _create_circular_mask(self._radius_um, resolution).count_pixels()
-        volumes = dict(((position, circle_volume_px3) for position in result.keys()))
+    def use_data(self, tab: SingleGuiTab, data: Dict[Position, int]):
+        intensities = data
 
-        intensity_calculator.set_raw_intensities(self._experiment_original, result, volumes, intensity_key=self._intensity_key)
+        # Record volumes too, for administrative purposes
+        resolution = tab.experiment.images.resolution()
+        circle_volume_px3 = _create_circular_mask(self._radius_um, resolution).count_pixels()
+
+        volumes_px = dict(((position, circle_volume_px3) for position in intensities.keys()))
+        intensity_calculator.set_raw_intensities(tab.experiment, intensities, volumes_px,
+                                                 intensity_key=self._intensity_key)
+        tab.undo_redo.mark_unsaved_changes()
+
+    def on_finished(self, result: Any):
         dialog.popup_message("Intensities recorded", "All intensities have been recorded.\n\n"
                                                      "Your next step is likely to set a normalization. This can be\n"
                                                      "done from the Intensity menu in the main screen of the program.")
@@ -140,7 +145,7 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
         current_channel = self._window.display_settings.image_channel
         if self._channel_1 is not None:
             current_channel = self._channel_1
-        channel_count = len(self._experiment.images.get_channels())
+        channel_count = len(self._find_available_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use"
                                                                   f" (1-{channel_count}, inclusive)?", minimum=1,
@@ -156,7 +161,7 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
         current_channel = self._window.display_settings.image_channel
         if self._channel_2 is not None:
             current_channel = self._channel_2
-        channel_count = len(self._experiment.images.get_channels())
+        channel_count = len(self._find_available_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use as the denominator"
                                                                   f" (1-{channel_count}, inclusive)?\n\nIf you don't want to compare two"
@@ -206,15 +211,29 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
                                         fill=True, facecolor=intensity_color))
         return True
 
+    def _find_available_channels(self) -> Set[ImageChannel]:
+        """Finds all channels that are available in all open experiments."""
+        channels = set()
+        for experiment in self._window.get_active_experiments():
+            for channel in experiment.images.get_channels():
+                channels.add(channel)
+        return channels
+
+    def _intensity_key_already_exists(self, key: str) -> bool:
+        for experiment in self._window.get_active_experiments():
+            if experiment.position_data.has_position_data_with_name(key):
+                return True
+        return False
+
     def _record_intensities(self):
-        channels = self._experiment.images.get_channels()
+        channels = self._find_available_channels()
         if self._channel_1 is None or self._channel_1 not in channels:
             raise UserError("Invalid first channel", "Please set a channel to measure in"
                                                      " using the Parameters menu.")
         if self._channel_2 is not None and self._channel_2 not in channels:
             raise UserError("Invalid second channel", "The selected second channel is no longer available."
                                                       " Please select a new one in the Parameters menu.")
-        if self._experiment.position_data.has_position_data_with_name(self._intensity_key):
+        if self._intensity_key_already_exists(self._intensity_key):
             if not dialog.prompt_confirmation("Intensities", "Warning: previous intensities stored under the key "
                                                              "\""+self._intensity_key+"\" will be overwritten.\n\n"
                                                              "This cannot be undone. Do you want to continue?\n\n"
@@ -222,6 +241,6 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
                                                              " different key in the Parameters menu."):
                 return
 
-        self._window.get_scheduler().add_task(
-            _RecordIntensitiesTask(self._experiment, self._nucleus_radius_um, self._channel_1, self._channel_2, self._intensity_key))
+        worker_job.submit_job(self._window, _RecordIntensitiesJob(self._nucleus_radius_um, self._channel_1,
+                                                                  self._channel_2, self._intensity_key))
         self.update_status("Started recording all intensities...")
