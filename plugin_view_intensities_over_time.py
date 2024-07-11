@@ -169,9 +169,7 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
                                   fontweight="bold", color="black", backgroundcolor=(1, 1, 1, 0.8))
         return True
 
-    def _on_mouse_click(self, event: MouseEvent):
-        if not event.dblclick:
-            return
+    def _on_mouse_single_click(self, event: MouseEvent):
         selected_position = self._get_position_at(event.xdata, event.ydata)
         if selected_position is None:
             self._selected_tracks.clear()

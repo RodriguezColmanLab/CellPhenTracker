@@ -87,7 +87,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         self._ax.plot(position.x, position.y, 'o', markersize=15 - abs(dz), color=color, markeredgecolor=color, markeredgewidth=5)
         return False
 
-    def _on_mouse_click(self, event: MouseEvent):
+    def _on_mouse_single_click(self, event: MouseEvent):
         # Prints the intensity of a cell
         selected_position = self._get_position_at(event.xdata, event.ydata)
         if selected_position is None or self._maximum_intensity is None:
