@@ -129,6 +129,7 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
     def __init__(self, window: Window):
         super().__init__(window)
         self._intensity_key = intensity_calculator.DEFAULT_INTENSITY_KEY
+        self._display_settings.max_intensity_projection = False
 
     def get_extra_menu_options(self) -> Dict[str, Any]:
         return {
@@ -244,3 +245,8 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
         worker_job.submit_job(self._window, _RecordIntensitiesJob(self._nucleus_radius_um, self._channel_1,
                                                                   self._channel_2, self._intensity_key))
         self.update_status("Started recording all intensities...")
+
+    def _get_figure_title(self) -> str:
+        return (f"Intensity measurement (circle)\n"
+                f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, "
+                f"c={self._display_settings.image_channel.index_one})")

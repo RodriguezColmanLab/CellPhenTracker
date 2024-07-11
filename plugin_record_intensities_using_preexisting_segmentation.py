@@ -213,6 +213,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
 
     def __init__(self, window: Window):
         super().__init__(window)
+        self._display_settings.max_intensity_projection = False
 
         # Initialize or random colormap
         source_colormap: Colormap = matplotlib.cm.jet
@@ -392,3 +393,8 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         colored = colored.reshape((rgb_canvas_3d.shape[0], rgb_canvas_3d.shape[1], rgb_canvas_3d.shape[2], 4))
         rgb_canvas_3d[:, :, :, :] += colored[:, :, :, 0:3]
         rgb_canvas_3d.clip(min=0, max=1, out=rgb_canvas_3d)
+
+    def _get_figure_title(self) -> str:
+        return (f"Intensity measurement (pre-existing segmentation)\n"
+                f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, "
+                f"c={self._display_settings.image_channel.index_one})")
