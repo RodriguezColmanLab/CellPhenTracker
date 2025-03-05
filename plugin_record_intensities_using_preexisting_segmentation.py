@@ -176,7 +176,9 @@ class _RecordIntensitiesJob(WorkerJob):
                 index = label_image.value_at(position)
                 if index == 0:
                     continue
-                props = props_by_label[index]
+                props = props_by_label.get(index)
+                if props is None:
+                    continue
                 intensity = numpy.sum(measurement_image_1.array[props.slice] * props.image) / props.area
                 if measurement_image_2 is not None:
                     intensity_2 = numpy.sum(measurement_image_2.array[props.slice] * props.image) / props.area
