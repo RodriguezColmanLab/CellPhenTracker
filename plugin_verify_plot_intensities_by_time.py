@@ -26,17 +26,19 @@ def _time_points_to_hours(t_values: ndarray, timings: ImageTimings) -> ndarray:
     return t_values_h
 
 
-def _draw_intensities_by_t(figure: Figure, timings: Optional[ImageTimings], intensities_by_name_and_t: Dict[str, Dict[int, List[float]]]):
+def _draw_intensities_by_t(figure: Figure, title: str, timings: Optional[ImageTimings], intensities_by_name_and_t: Dict[str, Dict[int, List[float]]]):
     ax: Axes = figure.gca()
 
+    ax.set_title(title)
     i = 0
     for intensity_key, values_by_t in intensities_by_name_and_t.items():
         t_values = numpy.arange(min(values_by_t.keys()), max(values_by_t.keys()) + 1)
         intensity_means = numpy.full_like(t_values, fill_value=numpy.nan, dtype=numpy.float64)
         intensity_stds = numpy.full_like(t_values, fill_value=numpy.nan, dtype=numpy.float64)
         for t, values in values_by_t.items():
-            intensity_means[t] = numpy.mean(values)
-            intensity_stds[t] = numpy.std(values, ddof=1)
+            time_index = t - t_values[0]
+            intensity_means[time_index] = numpy.mean(values)
+            intensity_stds[time_index] = numpy.std(values, ddof=1)
 
         # Filter out NaNs (we don't have positions for that time point)
         nan_values = numpy.isnan(intensity_means)
@@ -90,6 +92,7 @@ def _plot_intensities_by_t(window: Window):
     if make_timings_unavailable:
         timings = None
 
-    dialog.popup_figure(window, lambda figure: _draw_intensities_by_t(figure, timings, intensities_by_name_and_t))
+    title = experiment.name.get_name()
+    dialog.popup_figure(window, lambda figure: _draw_intensities_by_t(figure, title, timings, intensities_by_name_and_t))
 
 
