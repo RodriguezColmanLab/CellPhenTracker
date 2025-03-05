@@ -7,7 +7,7 @@ from matplotlib.backend_bases import MouseEvent
 from matplotlib.colors import Colormap
 from matplotlib.figure import Figure
 
-from organoid_tracker.core import UserError, Color, max_none
+from organoid_tracker.core import UserError, Color, max_none, min_none
 from organoid_tracker.core.links import LinkingTrack
 from organoid_tracker.core.position import Position
 from organoid_tracker.core.resolution import ImageResolution
@@ -37,6 +37,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
     """Shows cells colored by their intensity, relative to other cells in this time point. Click on a cell to view
     its intensity as a number."""
 
+    _minimum_intensity: Optional[float]
     _maximum_intensity: Optional[float]
     _intensity_colormap: Colormap = matplotlib.cm.get_cmap("jet")
     _intensity_key: str
@@ -67,24 +68,31 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
 
     def _calculate_time_point_metadata(self):
         # Calculates the maximum intensity of this time point
+        min_intensity = None
         max_intensity = None
         for position in self._experiment.positions.of_time_point(self._time_point):
-            max_intensity = max_none(max_intensity, intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key))
+            intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key)
+            min_intensity = min_none(min_intensity, intensity)
+            max_intensity = max_none(max_intensity, intensity)
+        self._minimum_intensity = min_intensity
         self._maximum_intensity = max_intensity
 
     def _on_position_draw(self, position: Position, color: str, dz: int, dt: int) -> bool:
         # Draws a circle in a color based on the intensity
-        if self._maximum_intensity is None:
+        if self._maximum_intensity is None or self._minimum_intensity is None:
             return True
 
         if dt != 0:
             return False  # ignore other time points
+
+        marker_size = 13 if self._display_settings.max_intensity_projection else 15 - abs(dz)
+
         intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key)
         if intensity is None:
             return False
-        intensity_fraction = float(intensity / self._maximum_intensity)
-        color = self._intensity_colormap(intensity_fraction)
-        self._ax.plot(position.x, position.y, 'o', markersize=15 - abs(dz), color=color, markeredgecolor=color, markeredgewidth=5)
+        scaled_intensity = (intensity - self._minimum_intensity) / (self._maximum_intensity - self._minimum_intensity)
+        color = self._intensity_colormap(scaled_intensity)
+        self._ax.plot(position.x, position.y, 'o', markersize=marker_size, color=color, markeredgecolor=color, markeredgewidth=5)
         return False
 
     def _on_mouse_single_click(self, event: MouseEvent):
