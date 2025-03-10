@@ -210,8 +210,17 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
                 return True
         return False
 
+    def _get_channels(self) -> Set[ImageChannel]:
+        channels = None
+        for experiment in self._window.get_active_experiments():
+            if channels is None:
+                channels = set(experiment.images.get_channels())
+            else:
+                channels.intersection_update(set(experiment.images.get_channels()))
+        return channels
+
     def _record_intensities(self):
-        channels = self._experiment.images.get_channels()
+        channels = self._get_channels()
         if self._channel_1 is None or self._channel_1 not in channels:
             raise UserError("Invalid first channel", "Please set a channel to measure in"
                                                      " using the Parameters menu.")
