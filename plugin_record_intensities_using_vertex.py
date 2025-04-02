@@ -1,4 +1,3 @@
-import numpy
 import random
 from typing import Optional, Dict, Any, Tuple, List, Set
 
@@ -53,8 +52,8 @@ def _create_watershed_image(max_radius_um: float, positions: List[Position], ori
     marker_image.array[watershed_landscape > max_radius_um] = 1
 
     # Perform watershed
-    import mahotas
-    result = mahotas.cwatershed(watershed_landscape, marker_image.array)
+    import skimage.segmentation
+    result = skimage.segmentation.watershed(watershed_landscape, marker_image.array)
 
     return Image(result, offset=original_image.offset)
 
