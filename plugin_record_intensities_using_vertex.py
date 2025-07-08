@@ -145,11 +145,27 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
     def get_extra_menu_options(self) -> Dict[str, Any]:
         return {
             **super().get_extra_menu_options(),
+            "File//Export-Export image//3D vertex segmentation image...": self._export_vertex_segmentation_image,
             "Edit//Channels-Record intensities...": self._record_intensities,
             "Parameters//Channel-Set first channel...": self._set_channel,
             "Parameters//Channel-Set second channel (optional)...": self._set_channel_two,
             "Parameters//Radius-Set maximum nucleus radius...": self._set_max_nucleus_radius,
         }
+
+    def _export_vertex_segmentation_image(self):
+        if self._overlay_image is None:
+            raise UserError("No segmentation visible",
+                            "No segmentation visible. Please select a measurement channel first in the Parameters menu.")
+        if not dialog.popup_message_cancellable("Export vertex segmentation", "This will export the segmentation"
+                                                " of the current time point, mostly for your illustrative purposes. In"
+                                                " the next screen, we will ask you where to save the segmentation."):
+            return
+        file = dialog.prompt_save_file("Vertex segmentation", [("TIF file", "*.tif")])
+        if file is None:
+            return
+        import tifffile
+        tifffile.imwrite(file, self._overlay_image.array, compression=tifffile.COMPRESSION.ADOBE_DEFLATE,
+                         compressionargs={"level": 9})
 
     def _set_channel(self):
         """Prompts the user for a new value of self._channel1."""
@@ -238,7 +254,7 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
         resolution = self._experiment.images.resolution(allow_incomplete=True)
         positions = list(self._experiment.positions.of_time_point(self._time_point))
 
-        if self._channel_1 is None or resolution.is_incomplete() or len(positions) == 0:
+        if resolution.is_incomplete() or len(positions) == 0:
             # Not all information is present
             self._overlay_image = None
             return
@@ -249,7 +265,7 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
             # We know an image size, we can construct a fake image (doesn't matter for the result)
             offset = self._experiment.images.offsets.of_time_point(self._time_point)
             original_image = Image(numpy.zeros(image_size, dtype=numpy.uint8), offset=offset)
-        if original_image is None:
+        if original_image is None and self._channel_1 is not None:
             # We don't know the image size, load the image
             original_image = self._experiment.images.get_image(self._time_point, self._channel_1)
         if original_image is None:
