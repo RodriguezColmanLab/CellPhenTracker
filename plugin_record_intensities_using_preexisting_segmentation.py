@@ -156,6 +156,9 @@ class _RecordIntensitiesJob(WorkerJob):
         volumes_px3 = dict()
         for time_point in experiment_copy.positions.time_points():
             print(f"Working on time point {time_point.time_point_number()}...")
+            positions = list(experiment_copy.positions.of_time_point(time_point))
+            if len(positions) == 0:
+                continue  # Skip this time point
 
             # Load images
             label_image = experiment_copy.images.get_image(time_point, self._segmentation_channel)
@@ -172,7 +175,7 @@ class _RecordIntensitiesJob(WorkerJob):
             # Calculate intensities
             processed_labels = self._mask_processing_mode.process_mask_3d(label_image.array, self._mask_processing_size)
             props_by_label = _by_label(skimage.measure.regionprops(processed_labels))
-            for position in experiment_copy.positions.of_time_point(time_point):
+            for position in positions:
                 index = label_image.value_at(position)
                 if index == 0:
                     continue

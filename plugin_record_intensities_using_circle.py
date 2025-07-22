@@ -74,6 +74,9 @@ class _RecordIntensitiesJob(WorkerJob):
         results = dict()
         circular_mask = _create_circular_mask(self._radius_um, experiment_copy.images.resolution())
         for time_point in experiment_copy.positions.time_points():
+            positions = list(experiment_copy.positions.of_time_point(time_point))
+            if len(positions) == 0:
+                continue  # Skip this time point
 
             # Load images
             measurement_image_1 = experiment_copy.images.get_image(time_point, self._measurement_channel_1)
@@ -86,7 +89,7 @@ class _RecordIntensitiesJob(WorkerJob):
                     continue  # Skip this time point, image is missing
 
             # Calculate intensities
-            for position in experiment_copy.positions.of_time_point(time_point):
+            for position in positions:
                 intensity = _get_intensity(position, measurement_image_1, circular_mask)
                 if intensity is not None and self._measurement_channel_2 is not None:
                     intensity_2 = _get_intensity(position, measurement_image_2, circular_mask)

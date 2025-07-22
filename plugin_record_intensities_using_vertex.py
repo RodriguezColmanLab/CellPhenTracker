@@ -82,6 +82,8 @@ class _RecordIntensitiesTask(WorkerJob):
         for time_point in experiment_copy.positions.time_points():
             print(f"Working on time point {time_point.time_point_number()}...")
             positions = list(experiment_copy.positions.of_time_point(time_point))
+            if len(positions) == 0:
+                continue  # Skip this time point
 
             # Load images
             measurement_image_1 = experiment_copy.images.get_image(time_point, self._measurement_channel_1)
