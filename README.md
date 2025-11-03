@@ -9,7 +9,6 @@ The idea is that you already have a set of positions from OrganoidTracker, and t
 Ways of measuring intensity:
 
 * Using a circle or sphere of a set radius.
-* Using a watershed from existing cell positions on a biological membrane marker.
 * Using a vertex model: every pixel is assigned to the closest cell position.
 * Using an existing segmentation image, obtained by some external program.
 * Using existing metadata, obtained by some other plugin or program.
