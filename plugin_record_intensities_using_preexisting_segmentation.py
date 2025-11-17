@@ -1,7 +1,8 @@
+import math
 import random
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Optional, Dict, Any, Tuple, List, Set
+from typing import Optional, Dict, Any, Tuple, List, Set, Callable
 
 import matplotlib.cm
 import numpy
@@ -14,6 +15,7 @@ from organoid_tracker.core import UserError, TimePoint
 from organoid_tracker.core.experiment import Experiment
 from organoid_tracker.core.image_loader import ImageChannel
 from organoid_tracker.core.position import Position
+from organoid_tracker.core.resolution import ImageResolution
 from organoid_tracker.gui import dialog, worker_job
 from organoid_tracker.gui.gui_experiment import SingleGuiTab
 from organoid_tracker.gui.window import Window
@@ -21,6 +23,47 @@ from organoid_tracker.gui.worker_job import WorkerJob
 from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
+
+
+def _get_ellipsoid_structure(resolution: ImageResolution, labeled_image_shape_zyx: Tuple[int, int, int], size_um: float) -> ndarray:
+    """Creates a 3D ellipsoid structuring element with the given size in micrometers, taking into account that the
+    Z-resolution may be different than the XY resolution."""
+    size_px_z = int(round(size_um / resolution.pixel_size_z_um)) if resolution.pixel_size_z_um > 0 else 10
+    size_px_y = int(round(size_um / resolution.pixel_size_y_um))
+    size_px_x = int(round(size_um / resolution.pixel_size_x_um))
+
+    structuring_element = numpy.ones((2 * size_px_z + 1, 2 * size_px_y + 1, 2 * size_px_x + 1), dtype=bool)
+    zz, yy, xx = numpy.ogrid[-size_px_z:size_px_z + 1, -size_px_y:size_px_y + 1, -size_px_x:size_px_x + 1]
+    ellipsoid = (zz / (size_px_z + 0.5)) ** 2 + (yy / (size_px_y + 0.5)) ** 2 + (xx / (size_px_x + 0.5)) ** 2 <= 1
+    structuring_element &= ellipsoid
+
+    if labeled_image_shape_zyx[0] == 1:
+        # 2D image, make sure structuring element is also 2D
+        structuring_element = structuring_element[size_px_z, :, :][numpy.newaxis, :, :]
+
+    return structuring_element
+
+
+def _expand_slice(original_slice: Tuple[slice, slice, slice], image_shape: Tuple[int, int, int],
+                  structuring_element: ndarray) -> Tuple[slice, slice, slice]:
+    """Expands the given slice by the size of half the structuring element, ensuring we don't go out of bounds.
+    Will not expand more than the image shape."""
+    z_start, z_stop = original_slice[0].start, original_slice[0].stop
+    y_start, y_stop = original_slice[1].start, original_slice[1].stop
+    x_start, x_stop = original_slice[2].start, original_slice[2].stop
+
+    expand_z = structuring_element.shape[0] // 2
+    expand_y = structuring_element.shape[1] // 2
+    expand_x = structuring_element.shape[2] // 2
+
+    new_z_start = max(0, z_start - expand_z)
+    new_z_stop = min(image_shape[0], z_stop + expand_z)
+    new_y_start = max(0, y_start - expand_y)
+    new_y_stop = min(image_shape[1], y_stop + expand_y)
+    new_x_start = max(0, x_start - expand_x)
+    new_x_stop = min(image_shape[2], x_stop + expand_x)
+
+    return slice(new_z_start, new_z_stop), slice(new_y_start, new_y_stop), slice(new_x_start, new_x_stop)
 
 
 class _MaskProcessingMode(ABC):
@@ -33,23 +76,42 @@ class _MaskProcessingMode(ABC):
     @abstractmethod
     def get_size_question(self) -> Optional[str]:
         """The process_mask method requires a size parameter. This method returns the question that we should ask the
-        user so that the user knows what value to choose for that parameter. Like "By how many pixels should we enlarge
-        the mask?". Returns None if a size parameter is not required (in which case you can pass 0 to process_mask)."""
+        user so that the user knows what value to choose for that parameter. Like "By how many micrometers should we
+        enlarge the mask?". Returns None if a size parameter is not required (in which case you can pass 0 to
+        process_mask)."""
         raise NotImplementedError()
-
-
-    def process_mask_3d(self, labeled_image_3d: ndarray, size: int) -> ndarray:
-        """Calls process_mask_2d layer by layer."""
-        processed = numpy.empty_like(labeled_image_3d)
-        for z in range(labeled_image_3d.shape[0]):
-            processed[z] = self.process_mask_2d(labeled_image_3d[z], size)
-        return processed
 
     @abstractmethod
-    def process_mask_2d(self, labeled_image_2d: ndarray, size: int):
-        """Returns a mask that is used for the measurements. The new mask uses the same labeling as the old mask. The
-                old mask is not modified. See self.get_size_question for the size parameter."""
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
+        """Processes a 3D labeled image according to this mode. The labeled_image_3d array must not be modified."""
         raise NotImplementedError()
+
+    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[int], Optional[ndarray]],
+                        size_um: float, image_z: int) -> Optional[ndarray]:
+        """Processes a 2D labeled image at the given Z index. Depending on the mode, this may involve processing
+        nearby Z slices as well. labeled_image_getter is a function that will be called with an image Z (so without
+        image offsets) to get the labeled image for that Z."""
+
+        # In this default implementation, we assume we need to process nearby slices as well, as a slice may get
+        # dilated/erased because it's near the bottom or top of a 3D object
+        z_size_extra = int(math.ceil(size_um / resolution.pixel_size_z_um)) if resolution.pixel_size_z_um > 0 else 0
+        slice_of_interest = z_size_extra
+        image_2d_stack = [labeled_image_getter(image_z + dz) for dz in range(-z_size_extra, z_size_extra + 1)]
+
+        # Remove None slices at the start and end (in case we went out of bounds)
+        while len(image_2d_stack) > 0 and image_2d_stack[0] is None:
+            image_2d_stack.pop(0)
+            slice_of_interest -= 1
+        while len(image_2d_stack) > 0 and image_2d_stack[-1] is None:
+            image_2d_stack.pop()
+
+        if slice_of_interest < 0 or slice_of_interest >= len(image_2d_stack):
+            return None  # No image here
+
+        # Process our little 3D stack, return the appropriate slice
+        labeled_image_3d = numpy.stack(image_2d_stack, axis=0)
+        processed_3d = self.process_mask_3d(resolution, labeled_image_3d, size_um)
+        return processed_3d[slice_of_interest]
 
 
 class _ModeInside(_MaskProcessingMode):
@@ -59,11 +121,13 @@ class _ModeInside(_MaskProcessingMode):
     def get_size_question(self) -> Optional[str]:
         return None
 
-    def process_mask_3d(self, labeled_image_3d: ndarray, size: int) -> ndarray:
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
         return labeled_image_3d  # Don't change
 
-    def process_mask_2d(self, labeled_image_2d: ndarray, size: int):
-        return labeled_image_2d  # Don't change
+    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[int], Optional[ndarray]],
+                        size_um: float, image_z: int) -> Optional[ndarray]:
+        # No need to process nearby slices
+        return labeled_image_getter(image_z)
 
 
 class _ModeShrunken(_MaskProcessingMode):
@@ -71,13 +135,17 @@ class _ModeShrunken(_MaskProcessingMode):
         return "In shrunken masks"
 
     def get_size_question(self) -> Optional[str]:
-        return "By how many pixels should we shrink the mask (in 2D)?"
+        return "By how many micrometers should we shrink the mask (in 3D)?"
 
-    def process_mask_2d(self, labeled_image_2d: ndarray, size: int) -> ndarray:
-        eroded = scipy.ndimage.binary_erosion(labeled_image_2d, iterations=size)
-        eroded_labeled = numpy.copy(labeled_image_2d)
-        eroded_labeled[eroded == 0] = 0
-        return eroded_labeled
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
+        structuring_element = _get_ellipsoid_structure(resolution, labeled_image_3d.shape, size_um)
+
+        output_array = numpy.zeros_like(labeled_image_3d)
+        for region in skimage.measure.regionprops(labeled_image_3d):
+            mask = region.image
+            eroded_mask = scipy.ndimage.binary_erosion(mask, structure=structuring_element)
+            output_array[region.slice][eroded_mask] = region.label  # Set eroded
+        return output_array
 
 
 class _ModeEnlarged(_MaskProcessingMode):
@@ -85,12 +153,22 @@ class _ModeEnlarged(_MaskProcessingMode):
         return "In enlarged masks"
 
     def get_size_question(self) -> Optional[str]:
-        return "By how many pixels should we enlarge each mask (in 2D)?"
+        return "By how many micrometers should we enlarge each mask (in 3D)?"
 
-    def process_mask_2d(self, labeled_image_2d: ndarray, size: int) -> ndarray:
-        expanded = scipy.ndimage.maximum_filter(labeled_image_2d, size=size)
-        expanded[labeled_image_2d != 0] = labeled_image_2d[labeled_image_2d != 0]  # Leave original labels intact
-        return expanded
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
+        structuring_element = _get_ellipsoid_structure(resolution, labeled_image_3d.shape, size_um)
+
+        output_array = numpy.zeros_like(labeled_image_3d)
+        for region in skimage.measure.regionprops(labeled_image_3d):
+            expanded_slice = _expand_slice(region.slice, labeled_image_3d.shape, structuring_element)
+            mask = labeled_image_3d[expanded_slice] == region.label
+            dilated_mask = scipy.ndimage.binary_dilation(mask, structure=structuring_element)
+            output_array[expanded_slice][dilated_mask] = region.label  # Set dilated
+
+        # Ensure the original labels remain, and are not overwritten by neighboring dilations
+        output_array[labeled_image_3d != 0] = labeled_image_3d[labeled_image_3d != 0]
+
+        return output_array
 
 
 class _ModeOutside(_MaskProcessingMode):
@@ -98,12 +176,22 @@ class _ModeOutside(_MaskProcessingMode):
         return "At the borders, on the outside"
 
     def get_size_question(self) -> Optional[str]:
-        return "How many pixels should we measure outside the mask?"
+        return "How many micrometers should we measure outside the mask?"
 
-    def process_mask_2d(self, labeled_image_2d: ndarray, size: int) -> ndarray:
-        expanded = scipy.ndimage.maximum_filter(labeled_image_2d, size=size * 2 + 1)
-        expanded[labeled_image_2d != 0] = 0  # Don't measure in original nuclei
-        return expanded
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
+        structuring_element = _get_ellipsoid_structure(resolution, labeled_image_3d.shape, size_um)
+
+        # Fill the output array with dilated masks
+        output_array = numpy.zeros_like(labeled_image_3d)
+        for region in skimage.measure.regionprops(labeled_image_3d):
+            expanded_slice = _expand_slice(region.slice, labeled_image_3d.shape, structuring_element)
+            mask = labeled_image_3d[expanded_slice] == region.label
+            dilated_mask = scipy.ndimage.binary_dilation(mask, structure=structuring_element)
+            output_array[expanded_slice][dilated_mask] = region.label  # Set dilated
+
+        # Remove original masks, so that only the dilated part remains
+        output_array[labeled_image_3d != 0] = 0
+        return output_array
 
 
 _PROCESSING_MODES = [_ModeInside(), _ModeOutside(), _ModeShrunken(), _ModeEnlarged()]
@@ -135,17 +223,17 @@ class _RecordIntensitiesJob(WorkerJob):
     _measurement_channel_1: ImageChannel
     _measurement_channel_2: Optional[ImageChannel]
     _mask_processing_mode: _MaskProcessingMode
-    _mask_processing_size: int
+    _mask_processing_size_um: float
     _intensity_key: str
 
     def __init__(self, segmentation_channel: ImageChannel, measurement_channel_1: ImageChannel,
                  measurement_channel_2: Optional[ImageChannel], *, mask_processing_mode: _MaskProcessingMode,
-                 mask_processing_size: int, intensity_key: str):
+                 mask_processing_size_um: float, intensity_key: str):
         self._segmentation_channel = segmentation_channel
         self._measurement_channel_1 = measurement_channel_1
         self._measurement_channel_2 = measurement_channel_2
         self._mask_processing_mode = mask_processing_mode
-        self._mask_processing_size = mask_processing_size
+        self._mask_processing_size_um = mask_processing_size_um
         self._intensity_key = intensity_key
 
     def copy_experiment(self, experiment: Experiment) -> Experiment:
@@ -173,7 +261,8 @@ class _RecordIntensitiesJob(WorkerJob):
                 continue  # Skip this time point, an image is missing
 
             # Calculate intensities
-            processed_labels = self._mask_processing_mode.process_mask_3d(label_image.array, self._mask_processing_size)
+            resolution = experiment_copy.images.resolution()
+            processed_labels = self._mask_processing_mode.process_mask_3d(resolution, label_image.array, self._mask_processing_size_um)
             props_by_label = _by_label(skimage.measure.regionprops(processed_labels))
             for position in positions:
                 index = label_image.value_at(position)
@@ -214,7 +303,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
     _intensity_key: str = intensity_calculator.DEFAULT_INTENSITY_KEY
     _label_colormap: Colormap
     _mask_processing_mode: _MaskProcessingMode = _DEFAULT_PROCESSING_MODE
-    _mask_processing_size: int = 0
+    _mask_processing_size_um: int = 1.0
 
     def __init__(self, window: Window):
         super().__init__(window)
@@ -247,12 +336,12 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         new_size = 0
         question = mode.get_size_question()
         if question is not None:
-            new_size = dialog.prompt_int("Set size", question, minimum=0, maximum=1000,
-                                         default=self._mask_processing_size)
+            new_size = dialog.prompt_float("Set size", question, minimum=0, maximum=1000,
+                                           default=self._mask_processing_size_um)
             if new_size is None:
                 return
 
-        self._mask_processing_size = new_size
+        self._mask_processing_size_um = new_size
         self._mask_processing_mode = mode
         self.refresh_data()
         self._window.set_status("Set the mask processing mode to \"" + mode.get_name() + "\".")
@@ -345,9 +434,9 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
                 return
 
         worker_job.submit_job(self._window,
-            _RecordIntensitiesJob(self._segmented_channel, self._channel_1, self._channel_2,
-                                  intensity_key=self._intensity_key, mask_processing_mode=self._mask_processing_mode,
-                                  mask_processing_size=self._mask_processing_size))
+                              _RecordIntensitiesJob(self._segmented_channel, self._channel_1, self._channel_2,
+                                                    intensity_key=self._intensity_key, mask_processing_mode=self._mask_processing_mode,
+                                                    mask_processing_size_um=self._mask_processing_size_um))
         self.update_status("Started recording all intensities...")
 
     def should_show_image_reconstruction(self) -> bool:
@@ -369,10 +458,16 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
             if rgb_canvas_2d.shape[-1] == 4:
                 rgb_canvas_2d[:, :, 3] = 1  # Also erase alpha channel
 
-        labels = self._experiment.images.get_image_slice_2d(time_point, self._segmented_channel, z)
+        resolution = self._experiment.images.resolution()
+        offset_z = self._experiment.images.offsets.of_time_point(time_point).z
+        image_z_of_interest = int(round(z + offset_z))
+        def get_image(requested_image_z: int) -> ndarray:
+            requested_z = int(round(requested_image_z - offset_z))
+            return self._experiment.images.get_image_slice_2d(time_point, self._segmented_channel, requested_z)
+
+        labels = self._mask_processing_mode.process_mask_2d(resolution, get_image, self._mask_processing_size_um, image_z_of_interest)
         if labels is None:
             return  # No image here
-        labels = self._mask_processing_mode.process_mask_2d(labels, size=self._mask_processing_size)
 
         colored: ndarray = self._label_colormap(labels.flatten())
         colored = colored.reshape((rgb_canvas_2d.shape[0], rgb_canvas_2d.shape[1], 4))
