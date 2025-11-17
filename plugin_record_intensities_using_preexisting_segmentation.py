@@ -11,10 +11,11 @@ import skimage.measure
 from matplotlib.colors import Colormap, ListedColormap
 from numpy import ndarray
 
-from organoid_tracker.core import UserError, TimePoint
+from organoid_tracker.core import UserError, TimePoint, Name
 from organoid_tracker.core.experiment import Experiment
 from organoid_tracker.core.image_loader import ImageChannel
 from organoid_tracker.core.position import Position
+from organoid_tracker.core.position_collection import PositionCollection
 from organoid_tracker.core.resolution import ImageResolution
 from organoid_tracker.gui import dialog, worker_job
 from organoid_tracker.gui.gui_experiment import SingleGuiTab
@@ -216,6 +217,42 @@ def _by_label(region_props: List["skimage.measure._regionprops.RegionProperties"
     return return_value
 
 
+class _AddMissingPositionsTask(WorkerJob):
+    _segmentation_channel: ImageChannel
+
+    def __init__(self, segmentation_channel: ImageChannel):
+        self._segmentation_channel = segmentation_channel
+
+    def copy_experiment(self, experiment: Experiment) -> Experiment:
+        return experiment.copy_selected(images=True, positions=True)
+
+    def gather_data(self, experiment_copy: Experiment) -> PositionCollection:
+        if experiment_copy.positions.has_positions():
+            return experiment_copy.positions  # Nothing to do
+
+        positions = PositionCollection()
+        for time_point in experiment_copy.images.time_points():
+            segmentation_image = experiment_copy.images.get_image(time_point, self._segmentation_channel)
+            if segmentation_image is None:
+                continue  # No image here
+            offset = experiment_copy.images.offsets.of_time_point(time_point)
+            for region in skimage.measure.regionprops(segmentation_image.array):
+                z_center, y_center, x_center = region.centroid
+                position = Position(x=x_center + offset.x, y=y_center + offset.y, z=z_center + offset.z,
+                                    time_point=time_point)
+                positions.add(position)
+
+        return positions
+
+    def use_data(self, tab: SingleGuiTab, data: PositionCollection):
+        tab.experiment.positions = data
+        tab.undo_redo.mark_unsaved_changes()
+
+    def on_finished(self, results: Any):
+        dialog.popup_message("Positions created", "Positions have been created from the segmentation."
+                                                 "\n\nYou can now proceed to record intensities.")
+
+
 class _RecordIntensitiesJob(WorkerJob):
     """Records the intensities of all positions."""
 
@@ -329,7 +366,23 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         for mode in _PROCESSING_MODES:
             options["Parameters//Other-Set measurement location//" + mode.get_name()] =\
                 partial(self._set_processing_mode, mode)
+        if self._find_missing_positions_experiment() is not None:
+            options["Edit//Create positions from segmentation..."] = self._add_positions_from_segmentation
+
         return options
+
+    def _add_positions_from_segmentation(self):
+        if self._segmented_channel is None:
+            dialog.popup_message("Segmentation channel not set",
+                                 "Please set a segmentation channel in the Parameters menu first.")
+            return
+        if not dialog.popup_message_cancellable("Missing positions",
+                                               "This action will add the centroids of the segmented objects as"
+                                               " positions for any experiment that currently has no positions. No links over time will be created."):
+            return
+
+        worker_job.submit_job(self._window, _AddMissingPositionsTask(self._segmented_channel))
+        self.update_status("Started creating positions from segmentation...")
 
     def _set_processing_mode(self, mode: _MaskProcessingMode):
         """Changes self._mask_processing_size and self._mask_processing_mode"""
@@ -411,7 +464,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
 
     def _intensity_key_already_exists(self, key: str) -> bool:
         for experiment in self._window.get_active_experiments():
-            if experiment.position_data.has_position_data_with_name(key):
+            if experiment.positions.has_position_data_with_name(key):
                 return True
         return False
 
@@ -425,6 +478,11 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         if self._channel_2 is not None and self._channel_2 not in channels:
             raise UserError("Invalid second channel", "The selected second measurement channel is no longer available."
                                                       " Please select a new one in the Parameters menu.")
+        missing_positions_experiment_name = self._find_missing_positions_experiment()
+        if missing_positions_experiment_name is not None:
+            raise UserError("No positions", f"The experiment \"{missing_positions_experiment_name}\" has no"
+                            f" tracking data. You can use `Edit -> Create positions from segmentation...` to create"
+                            f" positions first.")
         if self._intensity_key_already_exists(self._intensity_key):
             if not dialog.prompt_confirmation("Intensities", "Warning: previous intensities stored under the key "
                                                              "\""+self._intensity_key+"\" will be overwritten.\n\n"
@@ -498,3 +556,9 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         return (f"Intensity measurement (pre-existing segmentation)\n"
                 f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, "
                 f"c={self._display_settings.image_channel.index_one})")
+
+    def _find_missing_positions_experiment(self) -> Optional[Name]:
+        for experiment in self._window.get_active_experiments():
+            if not experiment.positions.has_positions():
+                return experiment.name
+        return None
