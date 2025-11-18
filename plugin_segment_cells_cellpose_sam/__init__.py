@@ -11,7 +11,7 @@ def get_commands() -> dict[str, Callable[[list[str]], int]]:
 
 def get_menu_items(window: Window) -> dict[str, Any]:
     return {
-        "Shapy Blobs//Segment-Segment nuclei...": lambda: _create_segmentation_script(window),
+        "Tools//Segment-Segment with scaled Cellpose-SAM model...": lambda: _create_segmentation_script(window),
     }
 
 def _segment_cells(args: list[str]) -> int:
