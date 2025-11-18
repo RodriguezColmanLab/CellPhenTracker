@@ -1,6 +1,7 @@
 import math
 import random
 from abc import ABC, abstractmethod
+from enum import Enum
 from functools import partial
 from typing import Optional, Dict, Any, Tuple, List, Set, Callable
 
@@ -17,13 +18,50 @@ from organoid_tracker.core.image_loader import ImageChannel
 from organoid_tracker.core.position import Position
 from organoid_tracker.core.position_collection import PositionCollection
 from organoid_tracker.core.resolution import ImageResolution
-from organoid_tracker.gui import dialog, worker_job
+from organoid_tracker.gui import dialog, worker_job, option_choose_dialog
 from organoid_tracker.gui.gui_experiment import SingleGuiTab
 from organoid_tracker.gui.window import Window
 from organoid_tracker.gui.worker_job import WorkerJob
 from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
+
+
+class _ExcludeBorderMode(Enum):
+    OFF = 0
+    EXCLUDE_BORDER_XY_ONLY = 1
+    EXCLUDE_BORDER_ALL = 2
+
+    def get_display_name(self) -> str:
+        if self == _ExcludeBorderMode.OFF:
+            return "No exclusion"
+        elif self == _ExcludeBorderMode.EXCLUDE_BORDER_XY_ONLY:
+            return "Exclude objects touching XY borders"
+        elif self == _ExcludeBorderMode.EXCLUDE_BORDER_ALL:
+            return "Exclude objects touching any border"
+        else:
+            raise ValueError("Unknown exclusion mode")
+
+    def exclude_border_objects(self, array: ndarray) -> ndarray:
+        """Returns an array where the objects touching the borders have been removed (depending on the mode). The input
+        array is not modified."""
+        if self == _ExcludeBorderMode.OFF:
+            return array  # Nothing to do
+        elif self == _ExcludeBorderMode.EXCLUDE_BORDER_ALL:
+            if array.shape[0] == 1:
+                # Work in 2D, otherwise all labels will be removed
+                return skimage.segmentation.clear_border(array[0:])[numpy.newaxis, :, :]
+            return skimage.segmentation.clear_border(array)
+        elif self == _ExcludeBorderMode.EXCLUDE_BORDER_XY_ONLY:
+            # Create a mask along the XY borders only
+            mask = numpy.full_like(array, fill_value=True, dtype=bool)
+            mask[:, 0, :] = False
+            mask[:, -1, :] = False
+            mask[:, :, 0] = False
+            mask[:, :, -1] = False
+            return skimage.segmentation.clear_border(array, mask=mask)
+        else:
+            raise ValueError("Unknown exclusion mode")
 
 
 def _get_ellipsoid_structure(resolution: ImageResolution, labeled_image_shape_zyx: Tuple[int, int, int], size_um: float) -> ndarray:
@@ -262,16 +300,18 @@ class _RecordIntensitiesJob(WorkerJob):
     _mask_processing_mode: _MaskProcessingMode
     _mask_processing_size_um: float
     _intensity_key: str
+    _border_exclusion_mode: _ExcludeBorderMode
 
     def __init__(self, segmentation_channel: ImageChannel, measurement_channel_1: ImageChannel,
                  measurement_channel_2: Optional[ImageChannel], *, mask_processing_mode: _MaskProcessingMode,
-                 mask_processing_size_um: float, intensity_key: str):
+                 mask_processing_size_um: float, intensity_key: str, border_exclusion_mode: _ExcludeBorderMode):
         self._segmentation_channel = segmentation_channel
         self._measurement_channel_1 = measurement_channel_1
         self._measurement_channel_2 = measurement_channel_2
         self._mask_processing_mode = mask_processing_mode
         self._mask_processing_size_um = mask_processing_size_um
         self._intensity_key = intensity_key
+        self._border_exclusion_mode = border_exclusion_mode
 
     def copy_experiment(self, experiment: Experiment) -> Experiment:
         return experiment.copy_selected(images=True, positions=True)
@@ -297,9 +337,12 @@ class _RecordIntensitiesJob(WorkerJob):
             if label_image is None or measurement_image_1 is None:
                 continue  # Skip this time point, an image is missing
 
+            # Exclude border-touching objects if needed
+            processed_labels = self._border_exclusion_mode.exclude_border_objects(label_image.array)
+
             # Calculate intensities
             resolution = experiment_copy.images.resolution()
-            processed_labels = self._mask_processing_mode.process_mask_3d(resolution, label_image.array, self._mask_processing_size_um)
+            processed_labels = self._mask_processing_mode.process_mask_3d(resolution, processed_labels, self._mask_processing_size_um)
             props_by_label = _by_label(skimage.measure.regionprops(processed_labels))
             for position in positions:
                 index = label_image.value_at(position)
@@ -341,6 +384,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
     _label_colormap: Colormap
     _mask_processing_mode: _MaskProcessingMode = _DEFAULT_PROCESSING_MODE
     _mask_processing_size_um: int = 1.0
+    _exclude_border_mode: _ExcludeBorderMode = _ExcludeBorderMode.OFF
 
     def __init__(self, window: Window):
         super().__init__(window)
@@ -362,6 +406,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
             "Parameters//Channel-Set second measurement channel (optional)...": self._set_measurement_channel_two,
             "Parameters//Other-Set segmented channel...": self._set_segmented_channel,
             "Parameters//Other-Set storage key...": self._set_intensity_key,
+            "Parameters//Other-Set border exclusion mode...": self._set_border_exclusion_mode
         }
         for mode in _PROCESSING_MODES:
             options["Parameters//Other-Set measurement location//" + mode.get_name()] =\
@@ -454,6 +499,25 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
                 self._channel_2 = ImageChannel(index_zero=new_channel_index - 1)
             self.refresh_data()
 
+    def _set_border_exclusion_mode(self):
+        """Prompts the user for a new value of self._exclude_border_mode."""
+        current_mode = self._exclude_border_mode
+        options = list(_ExcludeBorderMode)
+        option_names = list()
+        for option in options:
+            if option == current_mode:
+                option_names.append(option.get_display_name() + " (current)")
+            else:
+                option_names.append(option.get_display_name())
+
+        new_index = option_choose_dialog.prompt_list("Border exclusion mode",
+                                                     f"Select the border exclusion mode. For 2D images, both modes are equivalent.",
+                                                     "Mode:", option_names)
+        if new_index is not None:
+            self._exclude_border_mode = options[new_index]
+            self.refresh_data()
+            self.update_status("Set the border exclusion mode to \"" + options[new_index].get_display_name() + "\".")
+
     def _find_available_channels(self) -> Set[ImageChannel]:
         """Finds all channels that are available in all open experiments."""
         channels = set()
@@ -494,7 +558,8 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         worker_job.submit_job(self._window,
                               _RecordIntensitiesJob(self._segmented_channel, self._channel_1, self._channel_2,
                                                     intensity_key=self._intensity_key, mask_processing_mode=self._mask_processing_mode,
-                                                    mask_processing_size_um=self._mask_processing_size_um))
+                                                    mask_processing_size_um=self._mask_processing_size_um,
+                                                    border_exclusion_mode=self._exclude_border_mode))
         self.update_status("Started recording all intensities...")
 
     def should_show_image_reconstruction(self) -> bool:
