@@ -11,6 +11,8 @@ from organoid_tracker.config import ConfigFile
 from organoid_tracker.core import TimePoint
 from organoid_tracker.core.experiment import Experiment
 from organoid_tracker.core.image_loader import ImageChannel
+from organoid_tracker.image_loading.builtin_merging_image_loaders import ChannelAppendingImageLoader
+from organoid_tracker.image_loading.folder_image_loader import FolderImageLoader
 from organoid_tracker.imaging import list_io
 from . import _configuration
 
@@ -35,6 +37,10 @@ def main():
 
     image_channel = ImageChannel(index_one=config.image_channel)
     model = cellpose.models.CellposeModel(gpu=True)
+
+    all_experiments_list_file = os.path.join(config.output_folder, "All experiments" + list_io.FILES_LIST_EXTENSION)
+    if os.path.exists(all_experiments_list_file):
+        os.unlink(all_experiments_list_file)  # Delete existing file, otherwise we would append to it
 
     for i, experiment in enumerate(list_io.load_experiment_list_file(config.input_dataset_file)):
         print(f"\nSegmenting experiment: {experiment.name}")
@@ -80,6 +86,14 @@ def main():
             # Write the result
             output_file = os.path.join(output_folder, f"masks_t{time_point.time_point_number():04d}.tif")
             tifffile.imwrite(output_file, masks, compression=tifffile.COMPRESSION.ADOBE_DEFLATE, compressionargs={"level": 9})
+
+        # Add the newly written masks as a channel to the experiment
+        masks_image_loader = FolderImageLoader(os.path.abspath(output_folder), "masks_t{time:04d}.tif",
+                                               experiment.images.first_time_point_number(), experiment.images.last_time_point_number(), 1, 1)
+        experiment.images.image_loader(ChannelAppendingImageLoader([experiment.images.image_loader(), masks_image_loader]))
+
+        # Add the experiment to the all experiments list
+        list_io.save_experiment_list_file([experiment], all_experiments_list_file, append_to_file=True)
 
 
 def _refine_masks(masks: ndarray, enlargement_factor: float, gaussian_cutoff: float = 0.5):

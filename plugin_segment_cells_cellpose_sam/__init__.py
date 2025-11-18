@@ -15,6 +15,7 @@ def get_menu_items(window: Window) -> dict[str, Any]:
     }
 
 def _segment_cells(args: list[str]) -> int:
+    print("Hi! This is the Cellpose-SAM 3D cell segmentation plugin.")
     from . import _cellpose_segmentation
     _cellpose_segmentation.main()
     return 0
