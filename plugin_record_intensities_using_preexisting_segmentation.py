@@ -456,16 +456,15 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
 
     def _set_segmented_channel(self):
         """Prompts the user for a new value of self._segmentation_channel."""
-        channels = self._experiment.images.get_channels()
         current_channel = self._segmented_channel if self._segmented_channel is not None else self._display_settings.image_channel
-        channel_count = len(channels)
+        channel_count = len(self._find_available_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use"
                                                                   f" (1-{channel_count}, inclusive)?", minimum=1,
                                               maximum=channel_count,
                                               default=current_channel.index_one)
         if new_channel_index is not None:
-            self._segmented_channel = channels[new_channel_index - 1]
+            self._segmented_channel = ImageChannel(index_one=new_channel_index)
             self.refresh_data()
 
     def _set_measurement_channel_one(self):
