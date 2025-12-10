@@ -6,7 +6,7 @@ from organoid_tracker.gui.window import Window
 def get_commands() -> dict[str, Callable[[list[str]], int]]:
     # Command-line commands, used in python organoid_tracker.py <command>
     return {
-        "segment_cells_3d_shapy_blobs": _segment_cells
+        "segment_cells_3d_cellpose_sam": _segment_cells
     }
 
 def get_menu_items(window: Window) -> dict[str, Any]:

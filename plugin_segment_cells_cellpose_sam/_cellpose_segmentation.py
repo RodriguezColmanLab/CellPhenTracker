@@ -4,6 +4,7 @@ import numpy
 import os
 import skimage
 import tifffile
+from matplotlib import pyplot as plt
 from numpy import ndarray
 from tqdm import tqdm
 
@@ -31,7 +32,7 @@ def _find_time_points_without_masks(experiment: Experiment, output_folder: str) 
 
 def main():
     config = _configuration.SegmentationConfig()
-    config_file = ConfigFile("segment_cells_3d_shapy_blobs")
+    config_file = ConfigFile("segment_cells_3d_cellpose_sam")
     config.read_config(config_file)
     config_file.save_and_exit_if_changed()
 

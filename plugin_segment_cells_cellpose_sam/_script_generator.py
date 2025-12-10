@@ -39,11 +39,11 @@ def create_segmentation_script(window: Window):
         json.dump(data_structure, handle)
 
     # Save run script
-    create_run_script(output_folder, "segment_cells_3d_shapy_blobs")
+    create_run_script(output_folder, "segment_cells_3d_cellpose_sam")
 
     # Save config file
     current_image_channel = window.display_settings.image_channel.index_one
-    config_file = ConfigFile("segment_cells_3d_shapy_blobs", folder_name=output_folder)
+    config_file = ConfigFile("segment_cells_3d_cellpose_sam", folder_name=output_folder)
     from . import  _configuration
     config = _configuration.SegmentationConfig()
     config.read_config(config_file)
