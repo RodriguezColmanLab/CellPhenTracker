@@ -62,14 +62,11 @@ class _RecordIntensitiesTask(WorkerJob):
     """Records the intensities of all positions."""
 
     _radius_um: float
-    _measurement_channel_1: ImageChannel
-    _measurement_channel_2: Optional[ImageChannel]
+    _measurement_channel: ImageChannel
 
-    def __init__(self, radius_um: float, measurement_channel_1: ImageChannel,
-                 measurement_channel_2: Optional[ImageChannel]):
+    def __init__(self, radius_um: float, measurement_channel: ImageChannel):
         self._radius_um = radius_um
-        self._measurement_channel_1 = measurement_channel_1
-        self._measurement_channel_2 = measurement_channel_2
+        self._measurement_channel = measurement_channel
 
     def copy_experiment(self, experiment: Experiment) -> Experiment:
         return experiment.copy_selected(images=True, positions=True)
@@ -86,10 +83,7 @@ class _RecordIntensitiesTask(WorkerJob):
                 continue  # Skip this time point
 
             # Load images
-            measurement_image_1 = experiment_copy.images.get_image(time_point, self._measurement_channel_1)
-            measurement_image_2 = None
-            if self._measurement_channel_2 is not None:
-                measurement_image_2 = experiment_copy.images.get_image(time_point, self._measurement_channel_2)
+            measurement_image_1 = experiment_copy.images.get_image(time_point, self._measurement_channel)
             watershed_image = _create_watershed_image(self._radius_um, positions, measurement_image_1, resolution)
 
             # Calculate intensities
@@ -99,11 +93,6 @@ class _RecordIntensitiesTask(WorkerJob):
                 volume_px3 = len(cell_values_1)
                 if volume_px3 == 0:
                     continue  # Failed for this cell
-
-                if self._measurement_channel_2 is not None:
-                    # Divide by the other channel
-                    cell_values_2 = measurement_image_2.array[watershed_image.array == i + 2]
-                    intensity /= cell_values_2.sum()
 
                 intensities[position] = int(intensity)
                 volumes_px3[position] = int(volume_px3)
@@ -125,8 +114,7 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
     """First, specify the measurement channels and the maximum radius in the Parameters menu.
     Then, if you are happy with the masks, use Edit -> Record intensities."""
 
-    _channel_1: Optional[ImageChannel] = None
-    _channel_2: Optional[ImageChannel] = None
+    _measurement_channel: Optional[ImageChannel] = None
     _nucleus_radius_um: float = 6
 
     _overlay_image: Optional[Image] = None  # 3D image with labels: 1 for cell 1, 2 for the second, etc.
@@ -149,9 +137,8 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
             **super().get_extra_menu_options(),
             "File//Export-Export image//3D vertex segmentation image...": self._export_vertex_segmentation_image,
             "Edit//Channels-Record intensities...": self._record_intensities,
-            "Parameters//Channel-Set first channel...": self._set_channel,
-            "Parameters//Channel-Set second channel (optional)...": self._set_channel_two,
-            "Parameters//Radius-Set maximum nucleus radius...": self._set_max_nucleus_radius,
+            "Parameters//Parameters-Set measurement channel...": self._set_channel,
+            "Parameters//Parameters-Set maximum nucleus radius...": self._set_max_nucleus_radius,
         }
 
     def _export_vertex_segmentation_image(self):
@@ -172,8 +159,8 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
     def _set_channel(self):
         """Prompts the user for a new value of self._channel1."""
         current_channel = self._window.display_settings.image_channel
-        if self._channel_1 is not None:
-            current_channel = self._channel_1
+        if self._measurement_channel is not None:
+            current_channel = self._measurement_channel
         channel_count = len(self._find_available_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use"
@@ -181,27 +168,7 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
                                               maximum=channel_count,
                                               default=current_channel.index_one)
         if new_channel_index is not None:
-            self._channel_1 = ImageChannel(index_zero=new_channel_index - 1)
-            self.refresh_data()
-
-    def _set_channel_two(self):
-        """Prompts the user for a new value of either self._channel2.
-        """
-        current_channel = self._window.display_settings.image_channel
-        if self._channel_2 is not None:
-            current_channel = self._channel_2
-        channel_count = len(self._find_available_channels())
-
-        new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use as the denominator"
-                                                                  f" (1-{channel_count}, inclusive)?\n\nIf you don't want to compare two"
-                                                                  f" channels, and just want to\nview one channel, set this value to 0.",
-                                              minimum=0, maximum=channel_count,
-                                              default=current_channel.index_one)
-        if new_channel_index is not None:
-            if new_channel_index == 0:
-                self._channel_2 = None
-            else:
-                self._channel_2 = ImageChannel(index_zero=new_channel_index - 1)
+            self._measurement_channel = ImageChannel(index_zero=new_channel_index - 1)
             self.refresh_data()
 
     def _set_max_nucleus_radius(self):
@@ -238,18 +205,15 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
 
     def _record_intensities(self):
         channels = self._get_channels()
-        if self._channel_1 is None or self._channel_1 not in channels:
+        if self._measurement_channel is None or self._measurement_channel not in channels:
             raise UserError("Invalid first channel", "Please set a channel to measure in"
                                                      " using the Parameters menu.")
-        if self._channel_2 is not None and self._channel_2 not in channels:
-            raise UserError("Invalid second channel", "The selected second channel is no longer available."
-                                                      " Please select a new one in the Parameters menu.")
         if not dialog.prompt_confirmation("Intensities", "Warning: previous intensities will be overwritten."
                                                          " This cannot be undone. Do you want to continue?"):
             return
 
         worker_job.submit_job(self._window,
-                              _RecordIntensitiesTask(self._nucleus_radius_um, self._channel_1, self._channel_2))
+                              _RecordIntensitiesTask(self._nucleus_radius_um, self._measurement_channel))
         self.update_status("Started recording all intensities...")
 
     def _calculate_time_point_metadata(self):
@@ -267,9 +231,9 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
             # We know an image size, we can construct a fake image (doesn't matter for the result)
             offset = self._experiment.images.offsets.of_time_point(self._time_point)
             original_image = Image(numpy.zeros(image_size, dtype=numpy.uint8), offset=offset)
-        if original_image is None and self._channel_1 is not None:
+        if original_image is None and self._measurement_channel is not None:
             # We don't know the image size, load the image
-            original_image = self._experiment.images.get_image(self._time_point, self._channel_1)
+            original_image = self._experiment.images.get_image(self._time_point, self._measurement_channel)
         if original_image is None:
             # No image was found, fail
             self._overlay_image = None

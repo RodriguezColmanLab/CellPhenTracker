@@ -68,6 +68,6 @@ def _record_intensities(window: Window):
     new_intensity_keys = [possible_keys[i] for i in result]
     for experiment in window.get_active_experiments():
         for new_intensity_key in new_intensity_keys:
-            raw_intensities = dict(experiment.position_data.find_all_positions_with_data(new_intensity_key))
+            raw_intensities = dict(experiment.positions.find_all_positions_with_data(new_intensity_key))
             volumes = dict(((position, 1) for position in raw_intensities.keys()))
             intensity_calculator.set_raw_intensities(experiment, raw_intensities, volumes, intensity_key=new_intensity_key)

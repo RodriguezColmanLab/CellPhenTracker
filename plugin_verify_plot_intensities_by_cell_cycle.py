@@ -13,7 +13,7 @@ from organoid_tracker.core.links import LinkingTrack
 from organoid_tracker.gui import dialog
 from organoid_tracker.gui.window import Window
 from organoid_tracker.position_analysis import intensity_calculator
-from organoid_tracker.util.moving_average import MovingAverage, LinesAverage
+from organoid_tracker.util.moving_average import LinesAverage
 from organoid_tracker.util.mpl_helper import SANDER_APPROVED_COLORS
 
 
@@ -78,7 +78,7 @@ def _plot_intensities_by_cell_cycle(window: Window):
 
         timings = experiment.images.timings()
 
-        for intensity_key in intensity_calculator.get_intensity_keys(experiment):
+        for intensity_key in intensity_calculator.get_regular_intensity_keys(experiment):
             for track in cell_cycle_tracks:
                 delta_times_with_start_h = list()
                 delta_time_with_end_h = list()

@@ -48,5 +48,14 @@ Normalizing intensities is done from the `Intensity` menu from the main Organoid
 
 Note that normalizations don't stack: if you select a different normalization, the previous one is removed. You can have different normalizations for different intensities, though.
 
-Also note that normalizations don't modify your stored intensity values. They only add some metadata to the tracking data (in `experiment.global_data`), which OrganoidTracker then uses to calculate the actual intensity value. The advantage of this method is that you can later on change the normalization.
+Also note that normalizations don't modify your stored intensity values. They only add some metadata to the tracking data (in `experiment.global_data`), which OrganoidTracker then uses to calculate the actual intensity value. The advantage of this method is that you can later change the normalization.
 
+# Background correction
+CellPhenTracker has a very basic background correction built-in. It assumes a uniform background for each experiment, across all time points and Z-planes. It takes the darkest measured intensity value across all positions, time points and Z-planes, and assumes that this intensity corresponds to the background. Then, from this darkest intensity it calculates the background per pixel, and subtracts this from all intensities. This way, the lowest intensity becomes 0.
+
+If you have a group of cells that have zero signal for the reporter, then this method works out of the box. If you don't have such a group of cells, then you should on purpose define some fake positions in the background, and include those in the intensity measurement. This way, you will have some very low intensity values that will be used to define the background.
+
+# Ratiometric intensities
+If you have two sets of intensities, you can also calculate a ratiometric intensity. This could be used for normalization purposes (like normalizing a reporter by the H2B signal), or for a ratiometric reporter (like a FRET signal). First measure both intensities separately (see above). Then, use `Intensity` -> `Ratiometric intensity` to define a new ratiometric intensity. You will be prompted to select the numerator and denominator, as well as a name.
+
+Like normalizations and background corrections, only the metadata is actually stored (in `experiment.global_data`). The actual intensities are calculated on the fly when you plot them. As a result, if you measure the original intensities differently, or change the normalization, the ratiometric intensity will automatically update.

@@ -57,16 +57,13 @@ class _RecordIntensitiesJob(WorkerJob):
     """Records the intensities of all positions."""
 
     _radius_um: float
-    _measurement_channel_1: ImageChannel
-    _measurement_channel_2: Optional[ImageChannel]
+    _measurement_channel: ImageChannel
     _intensity_key: str
 
-    def __init__(self, radius_um: float, measurement_channel_1: ImageChannel,
-                 measurement_channel_2: Optional[ImageChannel], intensity_key: str):
+    def __init__(self, radius_um: float, measurement_channel: ImageChannel, intensity_key: str):
         # Make copy of experiment - so that we can safely work on it in another thread
         self._radius_um = radius_um
-        self._measurement_channel_1 = measurement_channel_1
-        self._measurement_channel_2 = measurement_channel_2
+        self._measurement_channel = measurement_channel
         self._intensity_key = intensity_key
 
     def copy_experiment(self, experiment: Experiment) -> Experiment:
@@ -82,24 +79,13 @@ class _RecordIntensitiesJob(WorkerJob):
                 continue  # Skip this time point
 
             # Load images
-            measurement_image_1 = experiment_copy.images.get_image(time_point, self._measurement_channel_1)
+            measurement_image_1 = experiment_copy.images.get_image(time_point, self._measurement_channel)
             if measurement_image_1 is None:
                 continue  # Skip this time point, image is missing
-            measurement_image_2 = None
-            if self._measurement_channel_2 is not None:
-                measurement_image_2 = experiment_copy.images.get_image(time_point, self._measurement_channel_2)
-                if measurement_image_2 is None:
-                    continue  # Skip this time point, image is missing
 
             # Calculate intensities
             for position in positions:
                 intensity, volume = _get_intensity(position, measurement_image_1, spherical_mask)
-                if volume > 0 and self._measurement_channel_2 is not None:
-                    intensity_2, volume_2 = _get_intensity(position, measurement_image_2, spherical_mask)
-                    if volume_2 != volume:
-                        intensity = None
-                    else:
-                        intensity /= intensity_2
                 if intensity is not None:
                     results_intensity[position] = intensity
                     results_volume[position] = volume
@@ -122,8 +108,7 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
     Then, record the intensities of each cell. If you are happy with the masks, then
     use Edit -> Record intensities."""
 
-    _channel_1: Optional[ImageChannel] = None
-    _channel_2: Optional[ImageChannel] = None
+    _measurement_channel: Optional[ImageChannel] = None
     _nucleus_radius_um: float = 3
     _intensity_key: str = intensity_calculator.DEFAULT_INTENSITY_KEY
 
@@ -135,8 +120,7 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
         return {
             **super().get_extra_menu_options(),
             "Edit//Channels-Record intensities...": self._record_intensities,
-            "Parameters//Channel-Set first channel...": self._set_channel,
-            "Parameters//Channel-Set second channel (optional)...": self._set_channel_two,
+            "Parameters//Channel-Set measurement channel...": self._set_channel,
             "Parameters//Other-Set nucleus radius...": self._set_nucleus_radius,
             "Parameters//Other-Set storage key...": self._set_intensity_key,
         }
@@ -144,8 +128,8 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
     def _set_channel(self):
         """Prompts the user for a new value of self._channel1."""
         current_channel = self._window.display_settings.image_channel
-        if self._channel_1 is not None:
-            current_channel = self._channel_1
+        if self._measurement_channel is not None:
+            current_channel = self._measurement_channel
         channel_count = len(self._find_available_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use"
@@ -153,27 +137,7 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
                                               maximum=channel_count,
                                               default=current_channel.index_one)
         if new_channel_index is not None:
-            self._channel_1 = ImageChannel(index_zero=new_channel_index - 1)
-            self.refresh_data()
-
-    def _set_channel_two(self):
-        """Prompts the user for a new value of either self._channel2.
-        """
-        current_channel = self._window.display_settings.image_channel
-        if self._channel_2 is not None:
-            current_channel = self._channel_2
-        channel_count = len(self._find_available_channels())
-
-        new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use as the denominator"
-                                                                  f" (1-{channel_count}, inclusive)?\n\nIf you don't want to compare two"
-                                                                  f" channels, and just want to\nview one channel, set this value to 0.",
-                                              minimum=0, maximum=channel_count,
-                                              default=current_channel.index_one)
-        if new_channel_index is not None:
-            if new_channel_index == 0:
-                self._channel_2 = None
-            else:
-                self._channel_2 = ImageChannel(index_zero=new_channel_index - 1)
+            self._measurement_channel = ImageChannel(index_zero=new_channel_index - 1)
             self.refresh_data()
 
     def _set_nucleus_radius(self):
@@ -230,12 +194,9 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
 
     def _record_intensities(self):
         channels = self._find_available_channels()
-        if self._channel_1 is None or self._channel_1 not in channels:
+        if self._measurement_channel is None or self._measurement_channel not in channels:
             raise UserError("Invalid first channel", "Please set a channel to measure in"
                                                      " using the Parameters menu.")
-        if self._channel_2 is not None and self._channel_2 not in channels:
-            raise UserError("Invalid second channel", "The selected second channel is no longer available."
-                                                      " Please select a new one in the Parameters menu.")
         if self._intensity_key_already_exists(self._intensity_key):
             if not dialog.prompt_confirmation("Intensities", "Warning: previous intensities stored under the key "
                                                              "\""+self._intensity_key+"\" will be overwritten.\n\n"
@@ -244,8 +205,8 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
                                                              " different key in the Parameters menu."):
                 return
 
-        worker_job.submit_job(self._window, _RecordIntensitiesJob(self._nucleus_radius_um, self._channel_1,
-                                                                  self._channel_2, self._intensity_key))
+        worker_job.submit_job(self._window, _RecordIntensitiesJob(self._nucleus_radius_um, self._measurement_channel,
+                                                                  self._intensity_key))
         self.update_status("Started recording all intensities...")
 
     def _get_figure_title(self) -> str:

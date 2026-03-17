@@ -67,7 +67,7 @@ def _plot_intensities_single_time_point(window: Window):
     intensities_by_name_and_z = dict()
     time_point = window.display_settings.time_point
     for experiment in window.get_active_experiments():
-        for intensity_key in intensity_calculator.get_intensity_keys(experiment):
+        for intensity_key in intensity_calculator.get_regular_intensity_keys(experiment):
             if intensity_key not in intensities_by_name_and_z:
                 intensities_by_name_and_z[intensity_key] = defaultdict(list)
 
@@ -89,11 +89,11 @@ def _plot_intensities_single_time_point(window: Window):
 def _plot_intensities_all_time_points(window: Window):
     intensities_by_name_and_z = dict()
     for experiment in window.get_active_experiments():
-        for intensity_key in intensity_calculator.get_intensity_keys(experiment):
+        for intensity_key in intensity_calculator.get_regular_intensity_keys(experiment):
             if intensity_key not in intensities_by_name_and_z:
                 intensities_by_name_and_z[intensity_key] = defaultdict(list)
 
-            for position, _ in experiment.position_data.find_all_positions_with_data(intensity_key):
+            for position, _ in experiment.positions.find_all_positions_with_data(intensity_key):
                 intensity = intensity_calculator.get_normalized_intensity(experiment, position,
                                                                           intensity_key=intensity_key, per_pixel=True)
                 if intensity is None:

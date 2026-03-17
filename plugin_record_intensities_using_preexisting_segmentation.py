@@ -296,18 +296,16 @@ class _RecordIntensitiesJob(WorkerJob):
 
     _segmentation_channel: ImageChannel
     _measurement_channel_1: ImageChannel
-    _measurement_channel_2: Optional[ImageChannel]
     _mask_processing_mode: _MaskProcessingMode
     _mask_processing_size_um: float
     _intensity_key: str
     _border_exclusion_mode: _ExcludeBorderMode
 
     def __init__(self, segmentation_channel: ImageChannel, measurement_channel_1: ImageChannel,
-                 measurement_channel_2: Optional[ImageChannel], *, mask_processing_mode: _MaskProcessingMode,
+                 *, mask_processing_mode: _MaskProcessingMode,
                  mask_processing_size_um: float, intensity_key: str, border_exclusion_mode: _ExcludeBorderMode):
         self._segmentation_channel = segmentation_channel
         self._measurement_channel_1 = measurement_channel_1
-        self._measurement_channel_2 = measurement_channel_2
         self._mask_processing_mode = mask_processing_mode
         self._mask_processing_size_um = mask_processing_size_um
         self._intensity_key = intensity_key
@@ -327,14 +325,9 @@ class _RecordIntensitiesJob(WorkerJob):
 
             # Load images
             label_image = experiment_copy.images.get_image(time_point, self._segmentation_channel)
-            measurement_image_1 = experiment_copy.images.get_image(time_point, self._measurement_channel_1)
-            measurement_image_2 = None
-            if self._measurement_channel_2 is not None:
-                measurement_image_2 = experiment_copy.images.get_image(time_point, self._measurement_channel_2)
-                if measurement_image_2 is None:
-                    continue  # Skip this time point, an image is missing
+            measurement_image = experiment_copy.images.get_image(time_point, self._measurement_channel_1)
 
-            if label_image is None or measurement_image_1 is None:
+            if label_image is None or measurement_image is None:
                 continue  # Skip this time point, an image is missing
 
             # Exclude border-touching objects if needed
@@ -351,10 +344,7 @@ class _RecordIntensitiesJob(WorkerJob):
                 props = props_by_label.get(index)
                 if props is None:
                     continue
-                intensity = numpy.sum(measurement_image_1.array[props.slice] * props.image)
-                if measurement_image_2 is not None:
-                    intensity_2 = numpy.sum(measurement_image_2.array[props.slice] * props.image)
-                    intensity /= intensity_2
+                intensity = numpy.sum(measurement_image.array[props.slice] * props.image)
                 intensities[position] = float(intensity)
                 volumes_px3[position] = props.area
         return intensities, volumes_px3
@@ -378,8 +368,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
     If you don't have pre-segmented images loaded yet, exit this view and use Edit -> Append image channel.
     """
     _segmented_channel: Optional[ImageChannel] = None
-    _channel_1: Optional[ImageChannel] = None
-    _channel_2: Optional[ImageChannel] = None
+    _measurement_channel: Optional[ImageChannel] = None
     _intensity_key: str = intensity_calculator.DEFAULT_INTENSITY_KEY
     _label_colormap: Colormap
     _mask_processing_mode: _MaskProcessingMode = _DEFAULT_PROCESSING_MODE
@@ -402,9 +391,8 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         options = {
             **super().get_extra_menu_options(),
             "Edit//Channels-Record intensities...": self._record_intensities,
-            "Parameters//Channel-Set first measurement channel...": self._set_measurement_channel_one,
-            "Parameters//Channel-Set second measurement channel (optional)...": self._set_measurement_channel_two,
-            "Parameters//Other-Set segmented channel...": self._set_segmented_channel,
+            "Parameters//Channel-Set measurement channel...": self._set_measurement_channel_one,
+            "Parameters//Channel-Set segmented channel...": self._set_segmented_channel,
             "Parameters//Other-Set storage key...": self._set_intensity_key,
             "Parameters//Other-Set border exclusion mode...": self._set_border_exclusion_mode
         }
@@ -469,7 +457,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
 
     def _set_measurement_channel_one(self):
         """Prompts the user for a new value of self._channel1."""
-        current_channel = self._channel_1 if self._channel_1 is not None else self._display_settings.image_channel
+        current_channel = self._measurement_channel if self._measurement_channel is not None else self._display_settings.image_channel
         channel_count = len(self._find_available_channels())
 
         new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use"
@@ -477,25 +465,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
                                               maximum=channel_count,
                                               default=current_channel.index_one)
         if new_channel_index is not None:
-            self._channel_1 = ImageChannel(index_zero=new_channel_index - 1)
-            self.refresh_data()
-
-    def _set_measurement_channel_two(self):
-        """Prompts the user for a new value of either self._channel2.
-        """
-        current_channel = self._channel_2 if self._channel_2 is not None else self._display_settings.image_channel
-        channel_count = len(self._find_available_channels())
-
-        new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use as the denominator"
-                                                                  f" (1-{channel_count}, inclusive)?\n\nIf you don't want to compare two"
-                                                                  f" channels, and just want to\nview one channel, set this value to 0.",
-                                              minimum=0, maximum=channel_count,
-                                              default=current_channel.index_one)
-        if new_channel_index is not None:
-            if new_channel_index == 0:
-                self._channel_2 = None
-            else:
-                self._channel_2 = ImageChannel(index_zero=new_channel_index - 1)
+            self._measurement_channel = ImageChannel(index_zero=new_channel_index - 1)
             self.refresh_data()
 
     def _set_border_exclusion_mode(self):
@@ -535,12 +505,9 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         channels = self._find_available_channels()
         if self._segmented_channel is None or self._segmented_channel not in channels:
             raise UserError("Invalid segmentation channel", "Please set a segmentation channel in the Parameters menu.")
-        if self._channel_1 is None or self._channel_1 not in channels:
+        if self._measurement_channel is None or self._measurement_channel not in channels:
             raise UserError("Invalid first channel", "Please set a measurement channel to measure in"
                                                      " using the Parameters menu.")
-        if self._channel_2 is not None and self._channel_2 not in channels:
-            raise UserError("Invalid second channel", "The selected second measurement channel is no longer available."
-                                                      " Please select a new one in the Parameters menu.")
         missing_positions_experiment_name = self._find_missing_positions_experiment()
         if missing_positions_experiment_name is not None:
             raise UserError("No positions", f"The experiment \"{missing_positions_experiment_name}\" has no"
@@ -555,7 +522,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
                 return
 
         worker_job.submit_job(self._window,
-                              _RecordIntensitiesJob(self._segmented_channel, self._channel_1, self._channel_2,
+                              _RecordIntensitiesJob(self._segmented_channel, self._measurement_channel,
                                                     intensity_key=self._intensity_key, mask_processing_mode=self._mask_processing_mode,
                                                     mask_processing_size_um=self._mask_processing_size_um,
                                                     border_exclusion_mode=self._exclude_border_mode))
@@ -564,7 +531,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
     def should_show_image_reconstruction(self) -> bool:
         if self._segmented_channel is None:
             return False  # Nothing to draw
-        if self._display_settings.image_channel not in {self._channel_1, self._channel_2, self._segmented_channel}:
+        if self._display_settings.image_channel not in {self._measurement_channel, self._segmented_channel}:
             return False  # Nothing to draw for this channel
         return True
 
@@ -572,7 +539,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         """Draws the labels in color to the rgb image."""
         if self._segmented_channel is None:
             return   # Nothing to draw
-        if self._display_settings.image_channel not in {self._channel_1, self._channel_2, self._segmented_channel}:
+        if self._display_settings.image_channel not in {self._measurement_channel, self._segmented_channel}:
             return  # Nothing to draw for this channel
         if self._segmented_channel == self._display_settings.image_channel:
             # Avoid drawing on top of the same image
@@ -600,7 +567,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         """Draws the labels in color to the rgb image."""
         if self._segmented_channel is None:
             return  # Nothing to draw
-        if self._display_settings.image_channel not in {self._channel_1, self._channel_2, self._segmented_channel}:
+        if self._display_settings.image_channel not in {self._measurement_channel, self._segmented_channel}:
             return  # Nothing to draw for this channel
         if self._segmented_channel == self._display_settings.image_channel:
             # Avoid drawing on top of the same image
