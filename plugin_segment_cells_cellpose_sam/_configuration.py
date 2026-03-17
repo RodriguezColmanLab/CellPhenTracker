@@ -18,6 +18,7 @@ class SegmentationConfig:
     min_percentile: float = 1.0
     max_percentile: float = 99.0
     mask_refinement_cutoff: float = 0.5
+    mask_smoothing_factor: float = 1.0
 
     def read_config(self, config_file: ConfigFile):
         self.input_dataset_file = config_file.get_or_default("input_dataset_file", self.input_dataset_file,
@@ -41,4 +42,8 @@ class SegmentationConfig:
                                                                         " the original image resolution. A Gaussian blur is applied to the blown-up masks, "
                                                                         " and all pixels with a value above this cutoff are included in the final mask."
                                                                         " If your masks are too small, decrease this value; if they are too large, increase it.",
+                                                                type=config_type_float)
+        self.mask_smoothing_factor = config_file.get_or_default("mask_smoothing_factor", self.mask_smoothing_factor,
+                                                              comment="Masks are normally smoothed by applying a Gaussian blur with a sigma of 1 / min(rescale_factors_z,y,x)."
+                                                                      "This is an additional multiplier for that factor. If your masks are too smooth, set it < 1; if there are pixel artifacts, set it > 1.",
                                                                 type=config_type_float)

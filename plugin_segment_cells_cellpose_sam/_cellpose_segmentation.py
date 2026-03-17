@@ -82,7 +82,8 @@ def main():
             # Refine the masks if we rescaled the image
             if (z_rescale_factor, y_rescale_factor, x_rescale_factor) != (1.0, 1.0, 1.0):
                 masks = skimage.transform.resize(masks, original_size, order=0, preserve_range=True, anti_aliasing=False).astype(masks.dtype)
-                _refine_masks(masks, 1 / min(z_rescale_factor, y_rescale_factor, x_rescale_factor), gaussian_cutoff=config.mask_refinement_cutoff)
+                enlargement_factor = 1 / min(z_rescale_factor, y_rescale_factor, x_rescale_factor) * config.mask_smoothing_factor
+                _refine_masks(masks, enlargement_factor, gaussian_cutoff=config.mask_refinement_cutoff)
 
             # Write the result
             output_file = os.path.join(output_folder, f"masks_t{time_point.time_point_number():04d}.tif")
