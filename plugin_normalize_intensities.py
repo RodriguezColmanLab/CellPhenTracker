@@ -23,10 +23,11 @@ def get_menu_items(window: Window) -> Dict[str, Any]:
 
 
 def _get_all_intensity_keys(window: Window) -> Set[str]:
-    """Gets all intensity keys available for all experiments"""
+    """Gets all intensity keys available for all experiments. Only considers regular intensity keys, as we can only
+    normalize those."""
     keys = set()
     for experiment in window.get_active_experiments():
-        keys |= set(intensity_calculator.get_intensity_keys(experiment))
+        keys |= set(intensity_calculator.get_regular_intensity_keys(experiment))
     return keys
 
 
