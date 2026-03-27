@@ -17,7 +17,7 @@ from organoid_tracker.image_loading.folder_image_loader import FolderImageLoader
 from organoid_tracker.imaging import list_io
 from . import _configuration
 
-_TARGET_RESOLUTION_UM = (1, 1, 1)  # Z, Y, X
+
 
 
 def _find_time_points_without_masks(experiment: Experiment, output_folder: str) -> list[TimePoint]:
@@ -58,9 +58,9 @@ def main():
             # Find how we need to rescale the image to get to the target resolution
             original_size = image.shape
             resolution = experiment.images.resolution()
-            z_rescale_factor = resolution.pixel_size_zyx_um[0] / _TARGET_RESOLUTION_UM[0]
-            y_rescale_factor = resolution.pixel_size_zyx_um[1] / _TARGET_RESOLUTION_UM[1]
-            x_rescale_factor = resolution.pixel_size_zyx_um[2] / _TARGET_RESOLUTION_UM[2]
+            z_rescale_factor = resolution.pixel_size_zyx_um[0] / config.target_resolution_zyx_um[0]
+            y_rescale_factor = resolution.pixel_size_zyx_um[1] / config.target_resolution_zyx_um[1]
+            x_rescale_factor = resolution.pixel_size_zyx_um[2] / config.target_resolution_zyx_um[2]
 
             # Rescale the image to the target resolution
             resized_image = skimage.transform.rescale(
