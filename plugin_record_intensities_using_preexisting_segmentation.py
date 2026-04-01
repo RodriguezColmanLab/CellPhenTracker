@@ -269,7 +269,7 @@ class _AddMissingPositionsTask(WorkerJob):
             return experiment_copy.positions  # Nothing to do
 
         positions = PositionCollection()
-        for time_point in experiment_copy.images.time_points():
+        for time_point in self.reporting_progress(experiment_copy.images.time_points()):
             segmentation_image = experiment_copy.images.get_image(time_point, self._segmentation_channel)
             if segmentation_image is None:
                 continue  # No image here
@@ -586,7 +586,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
     def _get_figure_title(self) -> str:
         return (f"Intensity measurement (pre-existing segmentation)\n"
                 f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, "
-                f"c={self._display_settings.image_channel.index_one})")
+                f"c={self._get_figure_title_channel_str()})")
 
     def _find_missing_positions_experiment(self) -> Optional[Name]:
         for experiment in self._window.get_active_experiments():

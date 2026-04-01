@@ -76,8 +76,7 @@ class _RecordIntensitiesTask(WorkerJob):
 
         intensities = dict()
         volumes_px3 = dict()
-        for time_point in experiment_copy.positions.time_points():
-            print(f"Working on time point {time_point.time_point_number()}...")
+        for time_point in self.reporting_progress(experiment_copy.positions.time_points()):
             positions = list(experiment_copy.positions.of_time_point(time_point))
             if len(positions) == 0:
                 continue  # Skip this time point
@@ -271,4 +270,4 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
     def _get_figure_title(self) -> str:
         return (f"Intensity measurement (vertex model)\n"
                 f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, "
-                f"c={self._display_settings.image_channel.index_one})")
+                f"c={self._get_figure_title_channel_str()})")

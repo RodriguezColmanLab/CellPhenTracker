@@ -1,27 +1,10 @@
 """Uses a simple sphere of a given radius for segmentation"""
-import math
-import numpy
-import random
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Dict, Any
 
-import matplotlib.cm
-import skimage.measure
-from matplotlib.colors import Colormap, ListedColormap
-from numpy import ndarray
-
-from organoid_tracker.core import UserError, bounding_box, TimePoint
-from organoid_tracker.core.experiment import Experiment
-from organoid_tracker.core.image_loader import ImageChannel
-from organoid_tracker.core.images import Image
-from organoid_tracker.core.mask import Mask
-from organoid_tracker.core.position import Position
-from organoid_tracker.core.resolution import ImageResolution
-from organoid_tracker.gui import dialog, option_choose_dialog
-from organoid_tracker.gui.threading import Task
+from organoid_tracker.core import UserError
+from organoid_tracker.gui import option_choose_dialog
 from organoid_tracker.gui.window import Window
 from organoid_tracker.position_analysis import intensity_calculator
-from organoid_tracker.visualizer import activate
-from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
 
 
 def get_menu_items(window: Window) -> Dict[str, Any]:
@@ -37,7 +20,7 @@ def _record_intensities(window: Window):
         existing_keys |= set(intensity_calculator.get_intensity_keys(experiment))
 
         # Find possible keys of intensities
-        names_and_types = experiment.position_data.get_data_names_and_types()
+        names_and_types = experiment.positions.get_data_names_and_types()
         for data_name, data_type in names_and_types.items():
             if data_type != float:
                 continue  # Skip non-numeric metadata

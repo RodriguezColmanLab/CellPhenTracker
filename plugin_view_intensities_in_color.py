@@ -124,4 +124,4 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
     def _get_figure_title(self) -> str:
         return (f"Intensity viewer\n"
                 f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, "
-                f"c={self._display_settings.image_channel.index_one})")
+                f"c={self._get_figure_title_channel_str()})")

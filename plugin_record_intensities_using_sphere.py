@@ -73,7 +73,7 @@ class _RecordIntensitiesJob(WorkerJob):
         results_intensity = dict()
         results_volume = dict()
         spherical_mask = _create_spherical_mask(self._radius_um, experiment_copy.images.resolution())
-        for time_point in experiment_copy.positions.time_points():
+        for time_point in self.reporting_progress(experiment_copy.positions.time_points()):
             positions = list(experiment_copy.positions.of_time_point(time_point))
             if len(positions) == 0:
                 continue  # Skip this time point
@@ -212,4 +212,4 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
     def _get_figure_title(self) -> str:
         return (f"Intensity measurement (sphere)\n"
                 f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, "
-                f"c={self._display_settings.image_channel.index_one})")
+                f"c={self._get_figure_title_channel_str()})")
