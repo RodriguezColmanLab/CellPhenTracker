@@ -1,20 +1,15 @@
 from functools import partial
-from typing import Optional, Dict, Any, Set, List
+from typing import Any
 
 import matplotlib.cm
-from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseEvent
 from matplotlib.colors import Colormap
-from matplotlib.figure import Figure
 
-from organoid_tracker.core import UserError, Color, max_none, min_none
-from organoid_tracker.core.links import LinkingTrack
+from organoid_tracker.core import max_none, min_none
 from organoid_tracker.core.position import Position
-from organoid_tracker.core.resolution import ImageResolution
 from organoid_tracker.gui import dialog
 from organoid_tracker.gui.window import Window
 from organoid_tracker.position_analysis import intensity_calculator
-from organoid_tracker.util.moving_average import MovingAverage
 from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
 
@@ -22,7 +17,7 @@ _AVERAGING_WINDOW_H = 4
 _STEP_SIZE_H = 0.2
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//View-View intensities in color...": lambda: _view_intensities(window)
     }
@@ -37,8 +32,8 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
     """Shows cells colored by their intensity, relative to other cells in this time point. Click on a cell to view
     its intensity as a number."""
 
-    _minimum_intensity: Optional[float]
-    _maximum_intensity: Optional[float]
+    _minimum_intensity: float | None
+    _maximum_intensity: float | None
     _intensity_colormap: Colormap = matplotlib.cm.get_cmap("jet")
     _intensity_key: str
 
@@ -47,7 +42,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         self._intensity_key = self._check_for_intensities()
         self._experiment.links.sort_tracks_by_x()
 
-    def get_extra_menu_options(self) -> Dict[str, Any]:
+    def get_extra_menu_options(self) -> dict[str, Any]:
         intensity_keys = self._get_available_intensity_keys()
         if len(intensity_keys) == 1 and next(iter(intensity_keys)) == self._intensity_key:
             return super().get_extra_menu_options()  # No need to show a selection menu
@@ -106,7 +101,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         self.update_status(f"The intensity of {selected_position} was measured as {intensity:.2f}, which is {percentage:.1f}% of"
                            f"the maximum of this time point")
 
-    def _get_available_intensity_keys(self) -> Set[str]:
+    def _get_available_intensity_keys(self) -> set[str]:
         intensity_keys = set()
         for experiment in self._window.get_active_experiments():
             intensity_keys |= set(intensity_calculator.get_intensity_keys(experiment))

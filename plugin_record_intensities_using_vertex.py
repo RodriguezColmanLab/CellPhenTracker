@@ -1,5 +1,5 @@
 import random
-from typing import Optional, Dict, Any, Tuple, List, Set
+from typing import Any
 
 import matplotlib.cm
 import numpy
@@ -21,7 +21,7 @@ from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Record intensities//Record using vertex model...": lambda: _view_intensities(window)
     }
@@ -31,7 +31,7 @@ def _view_intensities(window: Window):
     activate(_SeedSegmentationVisualizer(window))
 
 
-def _create_watershed_image(max_radius_um: float, positions: List[Position], original_image: Image,
+def _create_watershed_image(max_radius_um: float, positions: list[Position], original_image: Image,
                             resolution: ImageResolution) -> Image:
     """Creates a watershed image. Any label - 2 corresponds to the index in the positions list."""
 
@@ -71,7 +71,7 @@ class _RecordIntensitiesTask(WorkerJob):
     def copy_experiment(self, experiment: Experiment) -> Experiment:
         return experiment.copy_selected(images=True, positions=True)
 
-    def gather_data(self, experiment_copy: Experiment) -> Tuple[Dict[Position, int], Dict[Position, int]]:
+    def gather_data(self, experiment_copy: Experiment) -> tuple[dict[Position, int], dict[Position, int]]:
         resolution = experiment_copy.images.resolution()
 
         intensities = dict()
@@ -97,13 +97,13 @@ class _RecordIntensitiesTask(WorkerJob):
                 volumes_px3[position] = int(volume_px3)
         return intensities, volumes_px3
 
-    def use_data(self, tab: SingleGuiTab, data: Tuple[Dict[Position, int], Dict[Position, int]]):
+    def use_data(self, tab: SingleGuiTab, data: tuple[dict[Position, int], dict[Position, int]]):
         intensities, volume_px3 = data
 
         intensity_calculator.set_raw_intensities(tab.experiment, intensities, volume_px3)
         tab.undo_redo.mark_unsaved_changes()
 
-    def on_finished(self, result: Tuple[Dict[Position, int], Dict[Position, int]]):
+    def on_finished(self, result: tuple[dict[Position, int], dict[Position, int]]):
         dialog.popup_message("Intensities recorded", "All intensities have been recorded.\n\n"
                                                      "Your next step is likely to set a normalization. This can be\n"
                                                      "done from the Intensity menu in the main screen of the program.")
@@ -113,10 +113,10 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
     """First, specify the measurement channels and the maximum radius in the Parameters menu.
     Then, if you are happy with the masks, use Edit -> Record intensities."""
 
-    _measurement_channel: Optional[ImageChannel] = None
+    _measurement_channel: ImageChannel | None = None
     _nucleus_radius_um: float = 6
 
-    _overlay_image: Optional[Image] = None  # 3D image with labels: 1 for cell 1, 2 for the second, etc.
+    _overlay_image: Image | None = None  # 3D image with labels: 1 for cell 1, 2 for the second, etc.
     _label_colormap: Colormap
 
     def __init__(self, window: Window):
@@ -131,7 +131,7 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
         samples[1] = (0, 0, 0, 0)  # Force first label to black too, this is also background
         self._label_colormap = ListedColormap(samples)
 
-    def get_extra_menu_options(self) -> Dict[str, Any]:
+    def get_extra_menu_options(self) -> dict[str, Any]:
         return {
             **super().get_extra_menu_options(),
             "File//Export-Export image//3D vertex segmentation image...": self._export_vertex_segmentation_image,
@@ -179,7 +179,7 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
             self._nucleus_radius_um = new_radius
             self.refresh_data()  # Redraws the spheres
 
-    def _find_available_channels(self) -> Set[ImageChannel]:
+    def _find_available_channels(self) -> set[ImageChannel]:
         """Finds all channels that are available in all open experiments."""
         channels = set()
         for experiment in self._window.get_active_experiments():
@@ -193,7 +193,7 @@ class _SeedSegmentationVisualizer(ExitableImageVisualizer):
                 return True
         return False
 
-    def _get_channels(self) -> Set[ImageChannel]:
+    def _get_channels(self) -> set[ImageChannel]:
         channels = None
         for experiment in self._window.get_active_experiments():
             if channels is None:

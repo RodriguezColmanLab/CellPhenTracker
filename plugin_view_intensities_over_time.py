@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Optional, Dict, Any, Set, List
+from typing import Any, List
 
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseEvent
@@ -8,7 +8,7 @@ from matplotlib.figure import Figure
 from organoid_tracker.core import UserError, Color
 from organoid_tracker.core.links import LinkingTrack
 from organoid_tracker.core.position import Position
-from organoid_tracker.core.resolution import ImageResolution, ImageTimings
+from organoid_tracker.core.resolution import ImageTimings
 from organoid_tracker.gui import dialog
 from organoid_tracker.gui.window import Window
 from organoid_tracker.position_analysis import intensity_calculator
@@ -20,7 +20,7 @@ _AVERAGING_WINDOW_TIME_STEPS = 20
 _STEP_SIZE_H = 0.2
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     # Dynamic menu entries depending on the available intensities
 
     # Collect intensities
@@ -54,12 +54,12 @@ def _view_intensities(window: Window, intensity_key: str):
 
 
 class _Line:
-    times_h: List[float]
-    intensities: List[float]
-    positions: List[Position]
+    times_h: list[float]
+    intensities: list[float]
+    positions: list[Position]
     track_id: int
 
-    def __init__(self, timings: ImageTimings, positions: List[Position], intensities: List[Optional[float]],
+    def __init__(self, timings: ImageTimings, positions: list[Position], intensities: list[float | None],
                  track_id: int):
         self.times_h = list()
         self.intensities = list()
@@ -72,14 +72,14 @@ class _Line:
                 self.positions.append(position)
         self.track_id = track_id
 
-    def get_position_at(self, at_time_h: float) -> Optional[Position]:
+    def get_position_at(self, at_time_h: float) -> Position | None:
         """Gets the positions closest in time to the given time."""
         closest_index = self._get_nearest_index(at_time_h)
         if closest_index is None:
             return None
         return self.positions[closest_index]
 
-    def _get_nearest_index(self, at_time_h: float) -> Optional[int]:
+    def _get_nearest_index(self, at_time_h: float) -> int | None:
         closest_time_dh = None
         closest_index = None
         for index, time_h in enumerate(self.times_h):
@@ -95,14 +95,14 @@ class _PlotData:
     """Contains the data for the intensity over time plot."""
     _y_machine_name: str
     y_display_name: str
-    _lines: List[_Line]
+    _lines: list[_Line]
 
     def __init__(self, y_machine_name: str, y_display_name: str):
         self._y_machine_name = y_machine_name
         self.y_display_name = y_display_name
         self._lines = list()
 
-    def add_line(self, timings: ImageTimings, positions: List[Position], y_values: List[Optional[float]],
+    def add_line(self, timings: ImageTimings, positions: list[Position], y_values: list[float | None],
                  track_id: int):
         """Adds the intensity line of a single cell."""
         line = _Line(timings, positions, y_values, track_id)
@@ -110,7 +110,7 @@ class _PlotData:
             # Only add if there are full data points (neighbor connections, recorded intensities, etc)
             self._lines.append(line)
 
-    def export(self) -> List[Dict[str, List]]:
+    def export(self) -> list[dict[str, List]]:
         """For JSON export."""
         return [
             {
@@ -137,7 +137,7 @@ class _PlotData:
 class _IntensityOverTimePlotter(ExitableImageVisualizer):
     """Double-click on a cell to view the intensities over time."""
 
-    _selected_tracks: Set[LinkingTrack]
+    _selected_tracks: set[LinkingTrack]
     _intensity_key: str
 
     def __init__(self, window: Window, intensity_key: str):
@@ -150,7 +150,7 @@ class _IntensityOverTimePlotter(ExitableImageVisualizer):
         return "Time point " + str(self._time_point.time_point_number()) + "    (z=" + str(self._z) \
             + ", measuring " + self._intensity_key + ")"
 
-    def get_extra_menu_options(self) -> Dict[str, Any]:
+    def get_extra_menu_options(self) -> dict[str, Any]:
         return {
             **super().get_extra_menu_options(),
             "Graph//Intensities-Plot intensities...": self._plot_total_intensities,

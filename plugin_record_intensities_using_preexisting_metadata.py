@@ -1,5 +1,5 @@
 """Uses a simple sphere of a given radius for segmentation"""
-from typing import Dict, Any
+from typing import Any
 
 from organoid_tracker.core import UserError
 from organoid_tracker.gui import option_choose_dialog
@@ -7,7 +7,7 @@ from organoid_tracker.gui.window import Window
 from organoid_tracker.position_analysis import intensity_calculator
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Record intensities//Record-Record using pre-existing metadata...": lambda: _record_intensities(window)
     }

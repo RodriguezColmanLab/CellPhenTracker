@@ -1,5 +1,5 @@
 """If the organoid has a membrane marker, then that can be used for segmentation."""
-from typing import Dict, Any, Set, List
+from typing import Any
 
 from organoid_tracker.core import UserError
 from organoid_tracker.gui import dialog, option_choose_dialog
@@ -7,7 +7,7 @@ from organoid_tracker.gui.window import Window
 from organoid_tracker.position_analysis import intensity_calculator
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Normalize intensities//Normalize with background and z correction...":
             lambda: _normalize_with_background_and_z(window),
@@ -22,7 +22,7 @@ def get_menu_items(window: Window) -> Dict[str, Any]:
     }
 
 
-def _get_all_intensity_keys(window: Window) -> Set[str]:
+def _get_all_intensity_keys(window: Window) -> set[str]:
     """Gets all intensity keys available for all experiments. Only considers regular intensity keys, as we can only
     normalize those."""
     keys = set()
@@ -37,7 +37,7 @@ def _verify_saved_intensities(window: Window):
         raise UserError("No intensities", "No intensities were measured. Please do so first.")
 
 
-def _prompt_intensity_keys(window: Window) -> List[str]:
+def _prompt_intensity_keys(window: Window) -> list[str]:
     """If there are more than one intensity keys, this prompts the user which ones should be used. Returns an empty list
      if the user pressed Cancel, or if there were no intensities selected."""
     intensity_keys = list(_get_all_intensity_keys(window))

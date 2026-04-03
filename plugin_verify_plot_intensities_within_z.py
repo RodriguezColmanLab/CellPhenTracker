@@ -1,6 +1,6 @@
 import math
 from collections import defaultdict
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 import numpy
 from matplotlib.axes import Axes
@@ -13,7 +13,7 @@ from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.util.mpl_helper import SANDER_APPROVED_COLORS
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Verify intensities//WithinZ-Plot intensities within a z-layer (this time point)...":
             lambda: _plot_intensities_single_time_point(window),
@@ -22,12 +22,12 @@ def get_menu_items(window: Window) -> Dict[str, Any]:
     }
 
 
-def _draw_intensities_by_z(figure: Figure, time_point: Optional[TimePoint],
-                           intensities_by_name_and_z: Dict[str, Dict[int, List[float]]]):
+def _draw_intensities_by_z(figure: Figure, time_point: TimePoint | None,
+                           intensities_by_name_and_z: dict[str, dict[int, list[float]]]):
     """Creates a figure, one panel per intensity. The title will include the time point, or "all time points" if
     time_point is None."""
     intensity_keys = intensities_by_name_and_z.keys()
-    axes: List[Axes] = list(numpy.array(figure.subplots(nrows=min(2, len(intensity_keys)),
+    axes: list[Axes] = list(numpy.array(figure.subplots(nrows=min(2, len(intensity_keys)),
                                                         ncols=math.ceil(len(intensity_keys) / 2),
                                                         sharex=True, sharey=True)).flatten())
 

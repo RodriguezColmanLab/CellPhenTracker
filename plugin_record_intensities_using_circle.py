@@ -1,6 +1,6 @@
 """Uses a simple circle of a given radius for segmentation"""
 import math
-from typing import Optional, Dict, Any, Set
+from typing import Any
 
 from matplotlib.patches import Ellipse
 
@@ -20,7 +20,7 @@ from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Record intensities//Record intensity using circle...": lambda: _view_intensities(window)
     }
@@ -30,7 +30,7 @@ def _view_intensities(window: Window):
     activate(_CircleSegmentationVisualizer(window))
 
 
-def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> Optional[int]:
+def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> int | None:
     mask.center_around(position)
     if mask.count_pixels() == 0:
         return None
@@ -67,7 +67,7 @@ class _RecordIntensitiesJob(WorkerJob):
     def copy_experiment(self, experiment: Experiment) -> Experiment:
         return experiment.copy_selected(positions=True, images=True)
 
-    def gather_data(self, experiment_copy: Experiment) -> Dict[Position, int]:
+    def gather_data(self, experiment_copy: Experiment) -> dict[Position, int]:
         results = dict()
         circular_mask = _create_circular_mask(self._radius_um, experiment_copy.images.resolution())
         for time_point in self.reporting_progress(experiment_copy.positions.time_points()):
@@ -87,7 +87,7 @@ class _RecordIntensitiesJob(WorkerJob):
                     results[position] = intensity
         return results
 
-    def use_data(self, tab: SingleGuiTab, data: Dict[Position, int]):
+    def use_data(self, tab: SingleGuiTab, data: dict[Position, int]):
         intensities = data
 
         # Record volumes too, for administrative purposes
@@ -110,7 +110,7 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
     Then, record the intensities of each cell. If you are happy with the masks, then
     use Edit -> Record intensities."""
 
-    _measurement_channel: Optional[ImageChannel] = None
+    _measurement_channel: ImageChannel | None = None
     _nucleus_radius_um: float = 3
     _intensity_key: str
 
@@ -119,7 +119,7 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
         self._intensity_key = intensity_calculator.DEFAULT_INTENSITY_KEY
         self._display_settings.max_intensity_projection = False
 
-    def get_extra_menu_options(self) -> Dict[str, Any]:
+    def get_extra_menu_options(self) -> dict[str, Any]:
         return {
             **super().get_extra_menu_options(),
             "Edit//Channels-Record intensities...": self._record_intensities,
@@ -179,7 +179,7 @@ class _CircleSegmentationVisualizer(ExitableImageVisualizer):
                                         fill=True, facecolor=intensity_color))
         return True
 
-    def _find_available_channels(self) -> Set[ImageChannel]:
+    def _find_available_channels(self) -> set[ImageChannel]:
         """Finds all channels that are available in all open experiments."""
         channels = set()
         for experiment in self._window.get_active_experiments():

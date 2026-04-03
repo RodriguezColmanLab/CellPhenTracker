@@ -3,7 +3,7 @@ import random
 from abc import ABC, abstractmethod
 from enum import Enum
 from functools import partial
-from typing import Optional, Dict, Any, Tuple, List, Set, Callable
+from typing import Any, Callable
 
 import matplotlib.cm
 import numpy
@@ -64,7 +64,7 @@ class _ExcludeBorderMode(Enum):
             raise ValueError("Unknown exclusion mode")
 
 
-def _get_ellipsoid_structure(resolution: ImageResolution, labeled_image_shape_zyx: Tuple[int, int, int], size_um: float) -> ndarray:
+def _get_ellipsoid_structure(resolution: ImageResolution, labeled_image_shape_zyx: tuple[int, int, int], size_um: float) -> ndarray:
     """Creates a 3D ellipsoid structuring element with the given size in micrometers, taking into account that the
     Z-resolution may be different than the XY resolution."""
     size_px_z = int(round(size_um / resolution.pixel_size_z_um)) if resolution.pixel_size_z_um > 0 else 10
@@ -83,8 +83,8 @@ def _get_ellipsoid_structure(resolution: ImageResolution, labeled_image_shape_zy
     return structuring_element
 
 
-def _expand_slice(original_slice: Tuple[slice, slice, slice], image_shape: Tuple[int, int, int],
-                  structuring_element: ndarray) -> Tuple[slice, slice, slice]:
+def _expand_slice(original_slice: tuple[slice, slice, slice], image_shape: tuple[int, int, int],
+                  structuring_element: ndarray) -> tuple[slice, slice, slice]:
     """Expands the given slice by the size of half the structuring element, ensuring we don't go out of bounds.
     Will not expand more than the image shape."""
     z_start, z_stop = original_slice[0].start, original_slice[0].stop
@@ -113,7 +113,7 @@ class _MaskProcessingMode(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_size_question(self) -> Optional[str]:
+    def get_size_question(self) -> str | None:
         """The process_mask method requires a size parameter. This method returns the question that we should ask the
         user so that the user knows what value to choose for that parameter. Like "By how many micrometers should we
         enlarge the mask?". Returns None if a size parameter is not required (in which case you can pass 0 to
@@ -125,8 +125,8 @@ class _MaskProcessingMode(ABC):
         """Processes a 3D labeled image according to this mode. The labeled_image_3d array must not be modified."""
         raise NotImplementedError()
 
-    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[int], Optional[ndarray]],
-                        size_um: float, image_z: int) -> Optional[ndarray]:
+    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[int], ndarray | None],
+                        size_um: float, image_z: int) -> ndarray | None:
         """Processes a 2D labeled image at the given Z index. Depending on the mode, this may involve processing
         nearby Z slices as well. labeled_image_getter is a function that will be called with an image Z (so without
         image offsets) to get the labeled image for that Z."""
@@ -157,14 +157,14 @@ class _ModeInside(_MaskProcessingMode):
     def get_name(self) -> str:
         return "Inside masks (default)"
 
-    def get_size_question(self) -> Optional[str]:
+    def get_size_question(self) -> str | None:
         return None
 
     def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
         return labeled_image_3d  # Don't change
 
-    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[int], Optional[ndarray]],
-                        size_um: float, image_z: int) -> Optional[ndarray]:
+    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[int], ndarray | None],
+                        size_um: float, image_z: int) -> ndarray | None:
         # No need to process nearby slices
         return labeled_image_getter(image_z)
 
@@ -173,7 +173,7 @@ class _ModeShrunken(_MaskProcessingMode):
     def get_name(self) -> str:
         return "In shrunken masks"
 
-    def get_size_question(self) -> Optional[str]:
+    def get_size_question(self) -> str | None:
         return "By how many micrometers should we shrink the mask (in 3D)?"
 
     def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
@@ -191,7 +191,7 @@ class _ModeEnlarged(_MaskProcessingMode):
     def get_name(self) -> str:
         return "In enlarged masks"
 
-    def get_size_question(self) -> Optional[str]:
+    def get_size_question(self) -> str | None:
         return "By how many micrometers should we enlarge each mask (in 3D)?"
 
     def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
@@ -214,7 +214,7 @@ class _ModeOutside(_MaskProcessingMode):
     def get_name(self) -> str:
         return "At the borders, on the outside"
 
-    def get_size_question(self) -> Optional[str]:
+    def get_size_question(self) -> str | None:
         return "How many micrometers should we measure outside the mask?"
 
     def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
@@ -237,7 +237,7 @@ _PROCESSING_MODES = [_ModeInside(), _ModeOutside(), _ModeShrunken(), _ModeEnlarg
 _DEFAULT_PROCESSING_MODE = _ModeInside()
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Record intensities//Record-Record using pre-existing segmentation...": lambda: _view_intensities(window)
     }
@@ -247,8 +247,8 @@ def _view_intensities(window: Window):
     activate(_PreexistingSegmentationVisualizer(window))
 
 
-def _by_label(region_props: List["skimage.measure._regionprops.RegionProperties"]
-              ) -> Dict[int, "skimage.measure._regionprops.RegionProperties"]:
+def _by_label(region_props: list["skimage.measure._regionprops.RegionProperties"]
+              ) -> dict[int, "skimage.measure._regionprops.RegionProperties"]:
     return_value = dict()
     for region in region_props:
         return_value[region.label] = region
@@ -314,7 +314,7 @@ class _RecordIntensitiesJob(WorkerJob):
     def copy_experiment(self, experiment: Experiment) -> Experiment:
         return experiment.copy_selected(images=True, positions=True)
 
-    def gather_data(self, experiment_copy: Experiment) -> Tuple[Dict[Position, float], Dict[Position, int]]:
+    def gather_data(self, experiment_copy: Experiment) -> tuple[dict[Position, float], dict[Position, int]]:
         intensities = dict()
         volumes_px3 = dict()
         for time_point in experiment_copy.positions.time_points():
@@ -349,7 +349,7 @@ class _RecordIntensitiesJob(WorkerJob):
                 volumes_px3[position] = props.area
         return intensities, volumes_px3
 
-    def use_data(self, tab: SingleGuiTab, data: Tuple[Dict[Position, float], Dict[Position, int]]):
+    def use_data(self, tab: SingleGuiTab, data: tuple[dict[Position, float], dict[Position, int]]):
         intensities, volume_px3 = data
         intensity_calculator.set_raw_intensities(tab.experiment, intensities, volume_px3,
                                                  intensity_key=self._intensity_key)
@@ -367,8 +367,8 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
 
     If you don't have pre-segmented images loaded yet, exit this view and use Edit -> Append image channel.
     """
-    _segmented_channel: Optional[ImageChannel] = None
-    _measurement_channel: Optional[ImageChannel] = None
+    _segmented_channel: ImageChannel | None = None
+    _measurement_channel: ImageChannel | None = None
     _intensity_key: str = intensity_calculator.DEFAULT_INTENSITY_KEY
     _label_colormap: Colormap
     _mask_processing_mode: _MaskProcessingMode = _DEFAULT_PROCESSING_MODE
@@ -387,7 +387,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         samples[1] = (0, 0, 0, 0)  # Force first label to black too, this is also background
         self._label_colormap = ListedColormap(samples)
 
-    def get_extra_menu_options(self) -> Dict[str, Any]:
+    def get_extra_menu_options(self) -> dict[str, Any]:
         options = {
             **super().get_extra_menu_options(),
             "Edit//Channels-Record intensities...": self._record_intensities,
@@ -487,7 +487,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
             self.refresh_data()
             self.update_status("Set the border exclusion mode to \"" + options[new_index].get_display_name() + "\".")
 
-    def _find_available_channels(self) -> Set[ImageChannel]:
+    def _find_available_channels(self) -> set[ImageChannel]:
         """Finds all channels that are available in all open experiments."""
         channels = set()
         for experiment in self._window.get_active_experiments():
@@ -588,7 +588,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
                 f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, "
                 f"c={self._get_figure_title_channel_str()})")
 
-    def _find_missing_positions_experiment(self) -> Optional[Name]:
+    def _find_missing_positions_experiment(self) -> Name | None:
         for experiment in self._window.get_active_experiments():
             if not experiment.positions.has_positions():
                 return experiment.name

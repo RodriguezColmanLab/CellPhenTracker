@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Dict, Any, Set
+from typing import Any
 
 from organoid_tracker.core.experiment import Experiment
 from organoid_tracker.core.links import LinkingTrack
@@ -11,7 +11,7 @@ from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Filter intensities//By intensity...": lambda: _view_intensity_filtering(window)
     }
@@ -55,7 +55,7 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
             self._min_intensity = min(intensities) * 0.66
             self._max_intensity = max(intensities) * 1.5
 
-    def _get_available_intensity_keys(self) -> Set[str]:
+    def _get_available_intensity_keys(self) -> set[str]:
         intensity_keys = set()
         for experiment in self._window.get_active_experiments():
             intensity_keys.update(intensity_calculator.get_intensity_keys(experiment))
@@ -131,7 +131,7 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
         return f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, " \
                f"i={self._get_intensity_key()})"
 
-    def get_extra_menu_options(self) -> Dict[str, Any]:
+    def get_extra_menu_options(self) -> dict[str, Any]:
         menu_options = {
             **super().get_extra_menu_options(),
             "Edit//Apply-Apply intensity filtering": self._remove_intensities_outside_range,

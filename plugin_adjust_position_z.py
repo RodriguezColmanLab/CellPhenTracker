@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 from organoid_tracker.core import bounding_box
 from organoid_tracker.core.experiment import Experiment
@@ -9,13 +9,13 @@ from organoid_tracker.core.mask import Mask
 from organoid_tracker.core.position import Position
 from organoid_tracker.core.resolution import ImageResolution
 from organoid_tracker.gui import dialog
-from organoid_tracker.gui.gui_experiment import GuiExperiment, SingleGuiTab
+from organoid_tracker.gui.gui_experiment import SingleGuiTab
 from organoid_tracker.gui.threading import Task
 from organoid_tracker.gui.undo_redo import UndoableAction
 from organoid_tracker.gui.window import Window
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Other-Adjust Z-coords for maximal intensity...":
             lambda: _adjust_z_coords(window)
@@ -39,8 +39,8 @@ def _adjust_z_coords(window: Window):
 
 class _AdjustZCoordsTask(Task):
     _window: Window
-    _processing_tabs: List[SingleGuiTab]
-    _experiment_copies: List[Experiment]
+    _processing_tabs: list[SingleGuiTab]
+    _experiment_copies: list[Experiment]
     _radius_um: float
     _channel: ImageChannel
 
@@ -52,7 +52,7 @@ class _AdjustZCoordsTask(Task):
         self._radius_um = radius_um
         self._channel = window.display_settings.image_channel
 
-    def compute(self) -> List[Dict[Position, Position]]:
+    def compute(self) -> list[dict[Position, Position]]:
         results = list()
         for experiment in self._experiment_copies:
             moves = dict()
@@ -83,7 +83,7 @@ class _AdjustZCoordsTask(Task):
             results.append(moves)
         return results
 
-    def on_finished(self, result: List[Dict[Position, Position]]):
+    def on_finished(self, result: list[dict[Position, Position]]):
         total_positions = 0
         for tab, tab_result in zip(self._processing_tabs, result):
             total_positions += len(tab_result)
@@ -109,7 +109,7 @@ def _create_circular_mask(radius_um: float, resolution: ImageResolution) -> Mask
     return mask
 
 
-def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> Optional[int]:
+def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> int | None:
     mask.center_around(position)
     if mask.count_pixels() == 0:
         return None
@@ -118,9 +118,9 @@ def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> Op
 
 
 class _MovePositionsAction(UndoableAction):
-    _position_moves: Dict[Position, Position]
+    _position_moves: dict[Position, Position]
 
-    def __init__(self, position_moves: Dict[Position, Position]):
+    def __init__(self, position_moves: dict[Position, Position]):
         self._position_moves = position_moves
 
     def do(self, experiment: Experiment) -> str:

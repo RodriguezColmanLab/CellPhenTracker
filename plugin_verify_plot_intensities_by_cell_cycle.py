@@ -1,9 +1,7 @@
-import math
 from collections import defaultdict
-from typing import Dict, Any, List, Iterable, Tuple
+from typing import Any, Iterable
 
 import matplotlib
-import numpy
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
@@ -16,11 +14,10 @@ from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.util.moving_average import LinesAverage
 from organoid_tracker.util.mpl_helper import SANDER_APPROVED_COLORS
 
-
 _AVERAGING_TIME_H = 4
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Verify intensities//LineGraph-Plot intensities by cell cycle...": lambda: _plot_intensities_by_cell_cycle(
             window)
@@ -29,16 +26,16 @@ def get_menu_items(window: Window) -> Dict[str, Any]:
 
 class _IntensitiesOverTime:
     """The index in cell_cycle_percentages matches the data point with the same index in intensities."""
-    lines: List[Tuple[List[float], List[float]]]
+    lines: list[tuple[list[float], list[float]]]
 
     def __init__(self):
         self.lines = list()
 
-    def add_line(self, time_since_division_h: List[float], intensities: List[float]):
+    def add_line(self, time_since_division_h: list[float], intensities: list[float]):
         self.lines.append((time_since_division_h, intensities))
 
 
-def _draw_intensities_by_cell_cycle(figure: Figure, intensities_by_name: Dict[str, _IntensitiesOverTime]):
+def _draw_intensities_by_cell_cycle(figure: Figure, intensities_by_name: dict[str, _IntensitiesOverTime]):
     print(intensities_by_name)
     ax: Axes = figure.gca()
 

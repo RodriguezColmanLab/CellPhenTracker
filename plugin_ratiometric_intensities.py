@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Dict, Any, Callable
+from typing import Any, Callable
 
 from organoid_tracker.core import UserError
 from organoid_tracker.core.experiment import Experiment
@@ -33,7 +33,7 @@ class _AddRatiometricIntensityAction(UndoableAction):
         self._undo_function(experiment)
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
 
     # Add a button to add a new ratiometric intensity
     return_dict = {

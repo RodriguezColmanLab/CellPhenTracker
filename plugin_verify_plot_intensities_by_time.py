@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 import numpy
 from matplotlib.axes import Axes
@@ -13,7 +13,7 @@ from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.util.mpl_helper import SANDER_APPROVED_COLORS
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Verify intensities//LineGraph-Plot intensities by time...": lambda: _plot_intensities_by_t(window)
     }
@@ -26,7 +26,7 @@ def _time_points_to_hours(time_point_numbers: ndarray, timings: ImageTimings) ->
     return t_values_h
 
 
-def _draw_intensities_by_t(figure: Figure, timings: Optional[ImageTimings], intensities_by_name_and_t: Dict[str, Dict[int, List[float]]]):
+def _draw_intensities_by_t(figure: Figure, timings: ImageTimings | None, intensities_by_name_and_t: dict[str, dict[int, list[float]]]):
     ax: Axes = figure.gca()
 
     i = 0

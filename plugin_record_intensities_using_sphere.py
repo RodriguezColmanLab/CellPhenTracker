@@ -1,6 +1,6 @@
 """Uses a simple sphere of a given radius for segmentation"""
 import math
-from typing import Optional, Dict, Any, Tuple, Set
+from typing import Any
 
 import numpy
 from matplotlib.patches import Ellipse
@@ -21,7 +21,7 @@ from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//Record-Record intensities//Record intensity using sphere...": lambda: _view_intensities(window)
     }
@@ -31,7 +31,7 @@ def _view_intensities(window: Window):
     activate(_SphereSegmentationVisualizer(window))
 
 
-def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> Tuple[int, int]:
+def _get_intensity(position: Position, intensity_image: Image, mask: Mask) -> tuple[int, int]:
     """Gets the intensity and the volume in px."""
     mask.center_around(position)
     masked_image = mask.create_masked_image_nan(intensity_image)
@@ -69,7 +69,7 @@ class _RecordIntensitiesJob(WorkerJob):
     def copy_experiment(self, experiment: Experiment) -> Experiment:
         return experiment.copy_selected(images=True, positions=True)
 
-    def gather_data(self, experiment_copy: Experiment) -> Tuple[Dict[Position, int], Dict[Position, int]]:
+    def gather_data(self, experiment_copy: Experiment) -> tuple[dict[Position, int], dict[Position, int]]:
         results_intensity = dict()
         results_volume = dict()
         spherical_mask = _create_spherical_mask(self._radius_um, experiment_copy.images.resolution())
@@ -91,7 +91,7 @@ class _RecordIntensitiesJob(WorkerJob):
                     results_volume[position] = volume
         return results_intensity, results_volume
 
-    def use_data(self, tab: SingleGuiTab, data: Tuple[Dict[Position, int], Dict[Position, int]]):
+    def use_data(self, tab: SingleGuiTab, data: tuple[dict[Position, int], dict[Position, int]]):
         intensities, volumes_px = data
         intensity_calculator.set_raw_intensities(tab.experiment, intensities, volumes_px,
                                                  intensity_key=self._intensity_key)
@@ -108,7 +108,7 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
     Then, record the intensities of each cell. If you are happy with the masks, then
     use Edit -> Record intensities."""
 
-    _measurement_channel: Optional[ImageChannel] = None
+    _measurement_channel: ImageChannel | None = None
     _nucleus_radius_um: float = 3
     _intensity_key: str = intensity_calculator.DEFAULT_INTENSITY_KEY
 
@@ -116,7 +116,7 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
         super().__init__(window)
         self._display_settings.max_intensity_projection = False
 
-    def get_extra_menu_options(self) -> Dict[str, Any]:
+    def get_extra_menu_options(self) -> dict[str, Any]:
         return {
             **super().get_extra_menu_options(),
             "Edit//Channels-Record intensities...": self._record_intensities,
@@ -178,7 +178,7 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
                                         fill=True, facecolor=intensity_color))
         return True
 
-    def _find_available_channels(self) -> Set[ImageChannel]:
+    def _find_available_channels(self) -> set[ImageChannel]:
         """Finds all channels that are available in all open experiments."""
         channels = set()
         for experiment in self._window.get_active_experiments():

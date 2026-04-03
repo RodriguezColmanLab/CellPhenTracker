@@ -1,5 +1,5 @@
 from functools import partial
-from typing import NamedTuple, List, Dict, Any
+from typing import NamedTuple, Any
 
 import numpy
 from matplotlib.axes import Axes
@@ -13,7 +13,7 @@ from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.util.mpl_helper import SANDER_APPROVED_COLORS
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     # Dynamic menu entries depending on the available intensities
 
     # Collect intensities
@@ -56,7 +56,7 @@ def _view_intensities(window: Window, intensity_key: str):
     dialog.popup_figure(window, lambda figure: _plot(figure, all_intensities))
 
 
-def _plot(figure: Figure, all_intensities: List[_IntensitiesOfExperiment]):
+def _plot(figure: Figure, all_intensities: list[_IntensitiesOfExperiment]):
     ax: Axes = figure.gca()
     max_value = 0
     for i, intensities in enumerate(all_intensities):

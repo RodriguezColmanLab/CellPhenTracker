@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Dict, Any, Optional, List
+from typing import Any
 
 import matplotlib
 import numpy
@@ -14,7 +14,7 @@ from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.visualizer.lineage_tree_visualizer import LineageTreeVisualizer
 
 
-def get_menu_items(window: Window) -> Dict[str, Any]:
+def get_menu_items(window: Window) -> dict[str, Any]:
     return {
         "Intensity//View-Intensity-colored lineage tree...": lambda: _show_lineage_tree(window)
     }
@@ -40,7 +40,7 @@ class IntensityLineageTreeVisualizer(LineageTreeVisualizer):
     _intensity_scaling_quantile: float = 0
     _intensity_colormap: Colormap = matplotlib.cm.coolwarm
     _intensity_nan_color: Color = Color.black()
-    _intensity_sorting_key: Optional[str] = None  # Sorts the tracks using this intensity
+    _intensity_sorting_key: str | None = None  # Sorts the tracks using this intensity
 
     def __init__(self, window: Window):
         super().__init__(window)
@@ -101,13 +101,13 @@ class IntensityLineageTreeVisualizer(LineageTreeVisualizer):
                 self._intensity_max_value = numpy.quantile(intensities, q=1 - self._intensity_scaling_quantile)
 
 
-    def _get_custom_color_label(self) -> Optional[str]:
+    def _get_custom_color_label(self) -> str | None:
         return "intensities"
 
     def _get_lineage_line_width(self) -> float:
         return 3
 
-    def get_extra_menu_options(self) -> Dict[str, Any]:
+    def get_extra_menu_options(self) -> dict[str, Any]:
         intensity_keys = intensity_calculator.get_intensity_keys(self._experiment)
         if len(intensity_keys) == 0:
             intensity_keys = [intensity_calculator.DEFAULT_INTENSITY_KEY]
@@ -161,7 +161,7 @@ class IntensityLineageTreeVisualizer(LineageTreeVisualizer):
         else:
             self.update_status(f"Now scaling from {quantile * 100}% darkest to {100 - quantile * 100}% values accross all time points.")
 
-    def _switch_sorting_key(self, sorting_key: Optional[str]):
+    def _switch_sorting_key(self, sorting_key: str | None):
         self._intensity_sorting_key = sorting_key
         self.draw_view()
         if sorting_key is None:
@@ -188,7 +188,7 @@ class IntensityLineageTreeVisualizer(LineageTreeVisualizer):
         self._calculate_min_max_intensity()
         self.draw_view()
 
-    def _get_sorted_tracks(self) -> List[LinkingTrack]:
+    def _get_sorted_tracks(self) -> list[LinkingTrack]:
         if self._intensity_sorting_key is None:
             # Sort by track x
             links = self._experiment.links
@@ -217,7 +217,7 @@ class IntensityLineageTreeVisualizer(LineageTreeVisualizer):
         starting_tracks.sort(key=lambda t: intensity_by_track[t], reverse=True)
         return starting_tracks
 
-    def _get_custom_color(self, position: Position) -> Optional[Color]:
+    def _get_custom_color(self, position: Position) -> Color | None:
         intensity = intensity_calculator.get_normalized_intensity(self._experiment, position,
                                                                   intensity_key=self._intensity_key)
         if intensity is None or self._intensity_min_value == self._intensity_max_value:

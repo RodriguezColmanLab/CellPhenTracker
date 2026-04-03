@@ -1,10 +1,10 @@
-import cellpose.models
 import math
-import numpy
 import os
+
+import cellpose.models
+import numpy
 import skimage
 import tifffile
-from matplotlib import pyplot as plt
 from numpy import ndarray
 from tqdm import tqdm
 
@@ -16,8 +16,6 @@ from organoid_tracker.image_loading.builtin_merging_image_loaders import Channel
 from organoid_tracker.image_loading.folder_image_loader import FolderImageLoader
 from organoid_tracker.imaging import list_io
 from . import _configuration
-
-
 
 
 def _find_time_points_without_masks(experiment: Experiment, output_folder: str) -> list[TimePoint]:
