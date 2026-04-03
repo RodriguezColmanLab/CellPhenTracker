@@ -1,17 +1,17 @@
-import math
 from collections import defaultdict
 from typing import Dict, Any, List, Optional
 
 import numpy
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from numpy import ndarray
 
 from organoid_tracker.core.resolution import ImageTimings
 from organoid_tracker.gui import dialog
 from organoid_tracker.gui.window import Window
 from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.util.mpl_helper import SANDER_APPROVED_COLORS
-from numpy import ndarray
+
 
 def get_menu_items(window: Window) -> Dict[str, Any]:
     return {
@@ -19,39 +19,38 @@ def get_menu_items(window: Window) -> Dict[str, Any]:
     }
 
 
-def _time_points_to_hours(t_values: ndarray, timings: ImageTimings) -> ndarray:
-    t_values_h = numpy.empty_like(t_values, dtype=numpy.float64)
-    for i in range(len(t_values)):
-        t_values_h[i] = timings.get_time_h_since_start(t_values[i])
+def _time_points_to_hours(time_point_numbers: ndarray, timings: ImageTimings) -> ndarray:
+    t_values_h = numpy.empty_like(time_point_numbers, dtype=numpy.float64)
+    for i in range(len(time_point_numbers)):
+        t_values_h[i] = timings.get_time_h_since_start(time_point_numbers[i])
     return t_values_h
 
 
-def _draw_intensities_by_t(figure: Figure, title: str, timings: Optional[ImageTimings], intensities_by_name_and_t: Dict[str, Dict[int, List[float]]]):
+def _draw_intensities_by_t(figure: Figure, timings: Optional[ImageTimings], intensities_by_name_and_t: Dict[str, Dict[int, List[float]]]):
     ax: Axes = figure.gca()
 
-    ax.set_title(title)
     i = 0
     for intensity_key, values_by_t in intensities_by_name_and_t.items():
-        t_values = numpy.arange(min(values_by_t.keys()), max(values_by_t.keys()) + 1)
-        intensity_means = numpy.full_like(t_values, fill_value=numpy.nan, dtype=numpy.float64)
-        intensity_stds = numpy.full_like(t_values, fill_value=numpy.nan, dtype=numpy.float64)
+        time_point_numbers = numpy.arange(min(values_by_t.keys()), max(values_by_t.keys()) + 1)
+        intensity_means = numpy.full_like(time_point_numbers, fill_value=numpy.nan, dtype=numpy.float64)
+        intensity_stds = numpy.full_like(time_point_numbers, fill_value=numpy.nan, dtype=numpy.float64)
         for t, values in values_by_t.items():
-            time_index = t - t_values[0]
+            time_index = t - time_point_numbers[0]
             intensity_means[time_index] = numpy.mean(values)
             intensity_stds[time_index] = numpy.std(values, ddof=1)
 
         # Filter out NaNs (we don't have positions for that time point)
         nan_values = numpy.isnan(intensity_means)
-        t_values = t_values[~nan_values]
+        time_point_numbers = time_point_numbers[~nan_values]
         intensity_means = intensity_means[~nan_values]
         intensity_stds = intensity_stds[~nan_values]
 
         if timings is not None:
-            t_values = _time_points_to_hours(t_values, timings)
+            time_point_numbers = _time_points_to_hours(time_point_numbers, timings)
 
         color = SANDER_APPROVED_COLORS[i % len(SANDER_APPROVED_COLORS)]
-        ax.plot(t_values, intensity_means, label=intensity_key, color=color, linewidth=3)
-        ax.fill_between(t_values, intensity_means - intensity_stds, intensity_means + intensity_stds, color=color, alpha=0.4)
+        ax.plot(time_point_numbers, intensity_means, label=intensity_key, color=color, linewidth=3)
+        ax.fill_between(time_point_numbers, intensity_means - intensity_stds, intensity_means + intensity_stds, color=color, alpha=0.4)
         i += 1
 
     ax.set_ylabel("Intensity/px (a.u.)")
@@ -92,7 +91,6 @@ def _plot_intensities_by_t(window: Window):
     if make_timings_unavailable:
         timings = None
 
-    title = experiment.name.get_name()
-    dialog.popup_figure(window, lambda figure: _draw_intensities_by_t(figure, title, timings, intensities_by_name_and_t))
+    dialog.popup_figure(window, lambda figure: _draw_intensities_by_t(figure, timings, intensities_by_name_and_t))
 
 
