@@ -153,7 +153,7 @@ class _RatiometricImageViewer(ExitableImageVisualizer):
 
     def _set_segmentation_channel(self):
         display_names = self._get_channel_display_names()
-        display_names += "<Otsu segmentation>"
+        display_names.append("<Otsu segmentation>")
         result = option_choose_dialog.prompt_list("Segmentation channel", "Used to define where the ratio is displayed.", "Channel", display_names)
         if result is None:
             return
