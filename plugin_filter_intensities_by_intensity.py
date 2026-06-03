@@ -34,6 +34,7 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
     _min_intensity: float = 0
     _max_intensity: float = 1
     _max_percentage_per_track: float = 50
+    _per_pixel: bool = False
 
     def __init__(self, window: Window):
         super().__init__(window)
@@ -46,7 +47,7 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
         intensity_key = self._get_intensity_key()
         intensities = []
         for position in self._experiment.positions.of_time_point(self._time_point):
-            intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=intensity_key)
+            intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=intensity_key, per_pixel=self._per_pixel)
             if intensity is not None:
                 intensities.append(intensity)
         if len(intensities) > 0:
@@ -75,7 +76,7 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
                 out_of_range_count = 0
                 total_count = 0
                 for position in track.positions():
-                    intensity = intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=intensity_key)
+                    intensity = intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=intensity_key, per_pixel=self._per_pixel)
                     if intensity is not None:
                         total_count += 1
                         if intensity < self._min_intensity or intensity > self._max_intensity:
@@ -104,7 +105,7 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
         if intensity_key is None:
             return True  # No intensity keys available, so we don't filter anything out
 
-        intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=intensity_key)
+        intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=intensity_key, per_pixel=self._per_pixel)
         if intensity is None:
             return True  # No intensity for this position, so we don't filter it out
 
@@ -122,6 +123,8 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
             intensity_text = f"{intensity:.0f}"
         elif abs(intensity) < 1_000_000:
             intensity_text = f"{intensity / 1000:.0f}k"
+        elif abs(intensity) < 1_000_000_000:
+            intensity_text = f"{intensity / 1000_000:.0f}M"
         else:
             intensity_text = f"{intensity:.1e}"
         self._draw_annotation(position, intensity_text, text_color=text_color, background_color=background_color)
@@ -138,6 +141,7 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
             "Parameters//Intensity-Set minimum intensity...": self._set_min_intensity,
             "Parameters//Intensity-Set maximum intensity...": self._set_max_intensity,
             "Parameters//Intensity-Set track filtering percentage...": self._set_max_percentage_per_track,
+            "Parameters//Intensity-Set per pixel...": self._set_per_pixel,
         }
 
         intensity_keys = self._get_available_intensity_keys()
@@ -183,6 +187,29 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
         self._max_percentage_per_track = max_percentage_per_track
         self.update_status(f"Track filtering percentage set to {self._max_percentage_per_track:.0f}%.")
         self.draw_view()
+
+    def _set_per_pixel(self):
+        current = "per-pixel" if self._per_pixel else "total"
+        option = dialog.prompt_options("Per-pixel intensities", "Should we filter on total (integrated)"
+                                       f" intensity measured for the cell, or on the intensity per pixel?\n\nCurrenlty measuring the {current} intensity.",
+                                       option_1="Total", option_2="Per-pixel")
+        if option == 1:
+            if not self._per_pixel:
+                self.update_status("Already filtering on total intensity.")
+                return
+            self._per_pixel = False
+            self._auto_adjust_min_max()
+            self.draw_view()
+            self.update_status("Now filtering on total intensity.")
+        elif option == 2:
+            if self._per_pixel:
+                self.update_status("Already filtering on total intensity.")
+                return
+            self._per_pixel = True
+            self._auto_adjust_min_max()
+            self.draw_view()
+            self.update_status("Now filtering on per-pixel intensity.")
+
 
     def _set_intensity_key(self, intensity_key: str):
         self._intensity_key = intensity_key
