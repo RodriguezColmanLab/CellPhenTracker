@@ -317,7 +317,7 @@ class _RecordIntensitiesJob(WorkerJob):
     def gather_data(self, experiment_copy: Experiment) -> tuple[dict[Position, float], dict[Position, int]]:
         intensities = dict()
         volumes_px3 = dict()
-        for time_point in experiment_copy.positions.time_points():
+        for time_point in self.reporting_progress(experiment_copy.positions.time_points()):
             print(f"Working on time point {time_point.time_point_number()}...")
             positions = list(experiment_copy.positions.of_time_point(time_point))
             if len(positions) == 0:
