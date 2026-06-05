@@ -36,6 +36,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
     _maximum_intensity: float | None
     _intensity_colormap: Colormap = matplotlib.cm.get_cmap("jet")
     _intensity_key: str
+    _per_pixel: bool = False
 
     def __init__(self, window: Window):
         super().__init__(window)
@@ -50,6 +51,10 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         return_value = super().get_extra_menu_options().copy()
         for intensity_key in intensity_keys:
             return_value["Intensity//Selector-" + intensity_key] = partial(self._set_intensity_key, intensity_key)
+        if not self._per_pixel:
+            return_value["Intensity//Pixels-Change to per-pixel intensities"] = partial(self._set_per_pixel, True)
+        else:
+            return_value["Intensity//Cells-Change to summed intensities"] = partial(self._set_per_pixel, False)
         return return_value
 
     def _set_intensity_key(self, new_key: str):
@@ -57,6 +62,11 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         self._calculate_time_point_metadata()
         self.draw_view()
         self.update_status("Now viewing intensities stored with the key \"" + self._intensity_key + "\" .")
+
+    def _set_per_pixel(self, new_value: bool):
+        self._per_pixel = new_value
+        self._window.redraw_all()
+        self.update_status("Now showing " + ("per-pixel" if self._per_pixel else "summed") + " intensities.")
 
     def _must_show_other_time_points(self) -> bool:
         return False
@@ -66,7 +76,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         min_intensity = None
         max_intensity = None
         for position in self._experiment.positions.of_time_point(self._time_point):
-            intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key)
+            intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key, per_pixel=self._per_pixel)
             min_intensity = min_none(min_intensity, intensity)
             max_intensity = max_none(max_intensity, intensity)
         self._minimum_intensity = min_intensity
@@ -82,7 +92,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
 
         marker_size = 13 if self._display_settings.max_intensity_projection else 15 - abs(dz)
 
-        intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key)
+        intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key, per_pixel=self._per_pixel)
         if intensity is None:
             return False
         scaled_intensity = (intensity - self._minimum_intensity) / (self._maximum_intensity - self._minimum_intensity)
@@ -117,6 +127,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         return intensity_keys.pop()
 
     def _get_figure_title(self) -> str:
-        return (f"Intensity viewer\n"
+        per_pixel = "per-pixel" if self._per_pixel else "summed"
+        return (f"Intensity viewer ('{self._intensity_key}', {per_pixel})\n"
                 f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, "
                 f"c={self._get_figure_title_channel_str()})")
