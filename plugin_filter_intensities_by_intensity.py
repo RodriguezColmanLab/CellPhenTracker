@@ -21,6 +21,16 @@ def _view_intensity_filtering(window: Window):
     activate(_IntensityFilteringVisualizer(window))
 
 
+def _remove_intensity_of_position(experiment: Experiment, position: Position, intensity_key: str):
+    experiment.positions.set_position_data(position, intensity_key, None)
+    experiment.positions.set_position_data(position, intensity_key + "_volume", None)
+
+
+def _remove_intensities_of_track(experiment: Experiment, track: LinkingTrack, intensity_key: str):
+    for position in track.positions():
+        _remove_intensity_of_position(experiment, position, intensity_key)
+
+
 class _IntensityFilteringVisualizer(ExitableImageVisualizer):
     """You can use this screen to filter out intensities outside of a certain range. This is useful for example to
     filter out darkest cells (useful in calculating ratiometric intensities). We only filter out on the track level,
@@ -70,32 +80,104 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
         intensity_key = self._get_intensity_key()
 
         track_removed_count = 0
+        position_removed_count = 0
         for tab in self._window.get_gui_experiment().get_active_tabs():
             experiment = tab.experiment
-            for track in tab.experiment.links.find_all_tracks():
-                out_of_range_count = 0
-                total_count = 0
-                for position in track.positions():
-                    intensity = intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=intensity_key, per_pixel=self._per_pixel)
-                    if intensity is not None:
-                        total_count += 1
-                        if intensity < self._min_intensity or intensity > self._max_intensity:
-                            out_of_range_count += 1
-
-                if total_count > 0 and (out_of_range_count / total_count) * 100 >= self._max_percentage_per_track:
+            for track in experiment.links.find_all_tracks():
+                if self._should_remove_track(experiment, intensity_key, track):
                     # Too many intensities are out of range, filter out the entire track
-                    self._remove_intensities_of_track(experiment, track, intensity_key)
+                    _remove_intensities_of_track(experiment, track, intensity_key)
                     track_removed_count += 1
+            if self._max_percentage_per_track >= 50:
+                # Also remove lone positions
+                links = experiment.links
+                for time_point in experiment.positions.time_points():
+                    for position in experiment.positions.of_time_point(time_point):
+                        if links.get_track(position) is not None:
+                            continue  # Not a position without links
+                        intensity = intensity_calculator.get_normalized_intensity(experiment, position,
+                                                                                  intensity_key=intensity_key,
+                                                                                  per_pixel=self._per_pixel)
+                        if intensity is not None and (intensity < self._min_intensity or intensity > self._max_intensity):
+                            _remove_intensity_of_position(experiment, position, intensity_key)
+                            position_removed_count += 1
             tab.undo_redo.clear()
 
-        self.update_status(f"Removed intensities of {track_removed_count} tracks that had more than "
-                           f"{self._max_percentage_per_track:.0f}% of their intensities outside the range "
-                           f"[{self._min_intensity:.2f}, {self._max_intensity:.2f}].")
+        if track_removed_count > 0:
+            message = f"Removed intensities of {track_removed_count} tracks that had more than "
+            f"{self._max_percentage_per_track:.0f}% of their intensities outside the range "
+            f"[{self._min_intensity:.2f}, {self._max_intensity:.2f}]."
+            if position_removed_count > 0:
+                message += f" In addition, removed intensities of {position_removed_count} positions not part of a track."
+        elif position_removed_count > 0:
+            message = f"Removed intensities of {position_removed_count} positions that had more than "
+            f"{self._max_percentage_per_track:.0f}% of their intensities outside the range "
+            f"[{self._min_intensity:.2f}, {self._max_intensity:.2f}]."
+        else:
+            message = f"No tracks fell outside the filtering range. No intensities were removed."
+        self.update_status(message)
 
-    def _remove_intensities_of_track(self, experiment: Experiment, track: LinkingTrack, intensity_key: str):
+    def _delete_positions_outside_range(self):
+        if not dialog.popup_message_cancellable("Intensity filtering",
+            f"Are you sure you want fully delete all positions with intensities outside the range?\n\nThis can "
+            f"be quite a destructive action.\nYou cannot undo this action, so make sure you have a backup."):
+            return
+
+        intensity_key = self._get_intensity_key()
+
+        track_removed_count = 0
+        position_removed_count = 0
+        for tab in self._window.get_gui_experiment().get_active_tabs():
+            experiment = tab.experiment
+            positions_to_remove = list()
+            for track in experiment.links.find_all_tracks():
+                if self._should_remove_track(experiment, intensity_key, track):
+                    # Too many intensities are out of range, filter out the entire track
+                    positions_to_remove.extend(track.positions())
+                    track_removed_count += 1
+            if self._max_percentage_per_track >= 50:
+                # Also remove lone positions
+                links = experiment.links
+                for time_point in experiment.positions.time_points():
+                    for position in experiment.positions.of_time_point(time_point):
+                        if links.get_track(position) is not None:
+                            continue  # Not a position without links
+                        intensity = intensity_calculator.get_normalized_intensity(experiment, position,
+                                                                                  intensity_key=intensity_key,
+                                                                                  per_pixel=self._per_pixel)
+                        if intensity is not None and (intensity < self._min_intensity or intensity > self._max_intensity):
+                            positions_to_remove.append(position)
+                            position_removed_count += 1
+            experiment.remove_positions(positions_to_remove)
+            tab.undo_redo.clear()
+
+        if track_removed_count > 0:
+            message = f"Deleted {track_removed_count} tracks that had more than " \
+                f"{self._max_percentage_per_track:.0f}% of their intensities outside the range "\
+                f"[{self._min_intensity:.2f}, {self._max_intensity:.2f}]."
+            if position_removed_count > 0:
+                message += f" In addition, deleted {position_removed_count} positions not part of a track."
+        elif position_removed_count > 0:
+            message = f"Deleted {position_removed_count} positions that had more than "\
+                f"{self._max_percentage_per_track:.0f}% of their intensities outside the range "\
+                f"[{self._min_intensity:.2f}, {self._max_intensity:.2f}]."
+        else:
+            message = f"No tracks fell outside the filtering range. No positions were deleted."
+        dialog.popup_message("Filtering result", message)
+
+    def _should_remove_track(self, experiment: Experiment, intensity_key: str, track: LinkingTrack) -> bool:
+        out_of_range_count = 0
+        total_count = 0
         for position in track.positions():
-            experiment.positions.set_position_data(position, intensity_key, None)
-            experiment.positions.set_position_data(position, intensity_key + "_volume", None)
+            intensity = intensity_calculator.get_normalized_intensity(experiment, position, intensity_key=intensity_key,
+                                                                      per_pixel=self._per_pixel)
+            if intensity is not None:
+                total_count += 1
+                if intensity < self._min_intensity or intensity > self._max_intensity:
+                    out_of_range_count += 1
+        should_remove_track = total_count > 0 and (
+                    out_of_range_count / total_count) * 100 >= self._max_percentage_per_track
+        return should_remove_track
 
     def _on_position_draw(self, position: Position, color: str, dz: int, dt: int) -> bool:
         if dt != 0 or abs(dz) > 2:
@@ -137,7 +219,8 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
     def get_extra_menu_options(self) -> dict[str, Any]:
         menu_options = {
             **super().get_extra_menu_options(),
-            "Edit//Apply-Apply intensity filtering": self._remove_intensities_outside_range,
+            "Edit//Apply-Remove intensities outside range...": self._remove_intensities_outside_range,
+            "Edit//Apply-Delete positions with intensity outside range...": self._delete_positions_outside_range,
             "Parameters//Intensity-Set minimum intensity...": self._set_min_intensity,
             "Parameters//Intensity-Set maximum intensity...": self._set_max_intensity,
             "Parameters//Intensity-Set track filtering percentage...": self._set_max_percentage_per_track,
