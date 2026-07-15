@@ -34,7 +34,7 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
 
     _minimum_intensity: float | None
     _maximum_intensity: float | None
-    _intensity_colormap: Colormap = matplotlib.cm.get_cmap("jet")
+    _intensity_colormap: Colormap = matplotlib.colormaps.get_cmap("jet")
     _intensity_key: str
     _per_pixel: bool = False
 

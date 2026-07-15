@@ -20,6 +20,9 @@ class SegmentationConfig:
     mask_refinement_cutoff: float = 0.5
     mask_smoothing_factor: float = 1.0
 
+    block_size_cellpose_px: int = -1
+    block_size_cellpose_overlap_px: int = 10
+
     def read_config(self, config_file: ConfigFile):
         self.input_dataset_file = config_file.get_or_default("input_dataset_file", self.input_dataset_file,
                                                              comment="Path to the dataset file listing the images to segment.")
@@ -47,3 +50,9 @@ class SegmentationConfig:
                                                               comment="Masks are normally smoothed by applying a Gaussian blur with a sigma of 1 / min(rescale_factors_z,y,x)."
                                                                       "This is an additional multiplier for that factor. If your masks are too smooth, set it < 1; if there are pixel artifacts, set it > 1.",
                                                                 type=config_type_float)
+        self.block_size_cellpose_px = config_file.get_or_default("block_size_cellpose_px", self.block_size_cellpose_px, comment="Normally, the entire image is passed to CellPose. However, this can lead to out-of-memory errors for large images,"
+                                                                 " because CellPose does a few copying operations on the entire array. Set this to a value like 400 to divide the image into smaller blocks that are passed to CellPose."
+                                                                 " (this is the block size after scaling).",
+                                                                 type=config_type_int)
+        self.block_size_cellpose_overlap_px = config_file.get_or_default("block_size_cellpose_overlap_px", self.block_size_cellpose_overlap_px,
+                                                                         comment="Overlap in pixels between blocks when dividing the image for segmentation. This is the size in pixels after resizing.", type=config_type_int)
