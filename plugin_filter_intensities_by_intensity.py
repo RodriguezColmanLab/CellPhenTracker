@@ -1,6 +1,7 @@
 from functools import partial
 from typing import Any
 
+from organoid_tracker.core import UserError
 from organoid_tracker.core.experiment import Experiment
 from organoid_tracker.core.links import LinkingTrack
 from organoid_tracker.core.position import Position
@@ -165,6 +166,52 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
             message = f"No tracks fell outside the filtering range. No positions were deleted."
         dialog.popup_message("Filtering result", message)
 
+    def _add_flag_to_positions(self, inside_range: bool):
+        intensity_key = self._get_intensity_key()
+
+        flag_name = dialog.prompt_str("Add flag to positions", "Enter the name of the flag to add to"
+                                      " positions:\n\n(Note: flags are added based on single positions, not the entire"
+                                      " track. So the \"Track filtering percentage\" setting is ignored.)", intensity_key + "_positive")
+        if flag_name is None:
+            return  # User cancelled or entered an empty flag name
+        flag_name = flag_name.strip()
+        if not flag_name:
+            raise UserError("Empty flag name", "Flag name cannot be empty. Please enter a valid flag name.")
+        if flag_name == intensity_key:
+            raise UserError("Forbidden flag name", "Flag name cannot be the same as the intensity key,"
+                                                   " as otherwise all the intensities would get overwritten.")
+
+        position_flagged_count = 0
+        for tab in self._window.get_gui_experiment().get_active_tabs():
+            experiment = tab.experiment
+
+            # Remove any existing flags with the same name, so we don't have duplicates
+            experiment.positions.delete_data_with_name(flag_name)
+
+            # Loop through all positions
+            for time_point in experiment.positions.time_points():
+                positions_to_flag = dict()
+                for position in experiment.positions.of_time_point(time_point):
+                    intensity = intensity_calculator.get_normalized_intensity(experiment, position,
+                                                                              intensity_key=intensity_key,
+                                                                              per_pixel=self._per_pixel)
+                    if intensity is not None:
+                        position_in_range = intensity < self._min_intensity or intensity > self._max_intensity
+                        if (inside_range and not position_in_range) or (not inside_range and position_in_range):
+                            positions_to_flag[position] = True
+                            position_flagged_count += 1
+
+                experiment.positions.add_positions_data(flag_name, positions_to_flag)
+            tab.undo_redo.clear()
+
+        if position_flagged_count > 0:
+            message = f"Added flag '{flag_name}' to {position_flagged_count} positions that were "
+            message += "inside" if inside_range else "outside"
+            message += f" the range [{self._min_intensity:.2f}, {self._max_intensity:.2f}]."
+        else:
+            message = f"No positions fell {'inside' if inside_range else 'outside'} the filtering range. No flags were set."
+        self._window.set_status(message)
+
     def _should_remove_track(self, experiment: Experiment, intensity_key: str, track: LinkingTrack) -> bool:
         out_of_range_count = 0
         total_count = 0
@@ -221,6 +268,8 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
             **super().get_extra_menu_options(),
             "Edit//Apply-Remove intensities outside range...": self._remove_intensities_outside_range,
             "Edit//Apply-Delete positions with intensity outside range...": self._delete_positions_outside_range,
+            "Edit//Flag-Add flag to positions inside range...": partial(self._add_flag_to_positions, True),
+            "Edit//Flag-Add flag to positions outside range...": partial(self._add_flag_to_positions, False),
             "Parameters//Intensity-Set minimum intensity...": self._set_min_intensity,
             "Parameters//Intensity-Set maximum intensity...": self._set_max_intensity,
             "Parameters//Intensity-Set track filtering percentage...": self._set_max_percentage_per_track,
