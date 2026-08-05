@@ -21,7 +21,7 @@ def create_segmentation_script(window: Window):
                         " `conda install conda-forge::cellpose`, then restart the program.")
     try:
         # Check if Cellpose-SAM is installed
-        import cellpose.vit_sam
+        from cellpose.models import CellposeModel
     except ImportError:
         raise UserError("Cellpose <=3 found instead of CellPose-SAM",
                         "It appears that Cellpose version <=3 is installed instead of Cellpose-SAM. Please"
