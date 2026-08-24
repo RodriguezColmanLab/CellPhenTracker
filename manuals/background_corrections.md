@@ -1,0 +1,4 @@
+# Background correction
+CellPhenTracker has a very basic background correction built-in. It assumes a uniform background for each experiment, across all time points and Z-planes. It takes the darkest measured intensity value across all positions, time points and Z-planes, and assumes that this intensity corresponds to the background. Then, from this darkest intensity it calculates the background per pixel, and subtracts this from all intensities. This way, the lowest intensity becomes 0.
+
+If you have a group of cells that have zero signal for the reporter, then this method works out of the box. If you don't have such a group of cells, then you should on purpose define some fake positions in the background, and include those in the intensity measurement. This way, you will have some very low intensity values that will be used to define the background.

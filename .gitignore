@@ -3,3 +3,7 @@
 
 # Python dust
 *.pyc
+
+# Documentation output
+manuals/_build/
+manuals/_static/
