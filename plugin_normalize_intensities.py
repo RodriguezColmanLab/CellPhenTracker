@@ -9,14 +9,12 @@ from organoid_tracker.position_analysis import intensity_calculator
 
 def get_menu_items(window: Window) -> dict[str, Any]:
     return {
-        "Intensity//Record-Normalize intensities//Normalize with background and z correction...":
-            lambda: _normalize_with_background_and_z(window),
-        "Intensity//Record-Normalize intensities//Normalize with background correction...":
-            lambda: _normalize_with_background(window),
+        "Intensity//Record-Normalize intensities//Normalize with z correction...":
+            lambda: _normalize_with_z(window),
         "Intensity//Record-Normalize intensities//Normalize with time correction...":
             lambda: _normalize_with_time(window),
         "Intensity//Record-Normalize intensities//Normalize without corrections...":
-            lambda: _normalize_without_background(window),
+            lambda: _normalize_without_corrections(window),
         "Intensity//Record-Normalize intensities//Remove normalization...":
             lambda: _remove_normalization(window)
     }
@@ -55,11 +53,10 @@ def _prompt_intensity_keys(window: Window) -> list[str]:
         return [intensity_keys[i] for i in intensity_key_indices]
     return intensity_keys
 
-def _normalize_with_background_and_z(window: Window):
+def _normalize_with_z(window: Window):
     _verify_saved_intensities(window)
-    if not dialog.popup_message_cancellable("Normalization", "The normalization of the intensities will be changed. "
-                                            "The lowest found intensity in the experiment is used for setting the "
-                                            "background. In addition, the intensities will be multiplied to obtain "
+    if not dialog.popup_message_cancellable("Normalization", "The normalization of the intensities will be changed.\n"
+                                            "All intensities will be multiplied to obtain "
                                             "a median intensity of 1 at each z position."):
         return
 
@@ -69,23 +66,6 @@ def _normalize_with_background_and_z(window: Window):
         for intensity_key in intensity_keys:
             intensity_calculator.perform_intensity_normalization(experiment, background_correction=True,
                                                                  z_correction=True, intensity_key=intensity_key)
-        tab.undo_redo.mark_unsaved_changes()
-
-
-def _normalize_with_background(window: Window):
-    _verify_saved_intensities(window)
-    if not dialog.popup_message_cancellable("Normalization", "The normalization of the intensities will be changed.\n"
-                                            "The lowest found intensity in the experiment is used for setting the\n"
-                                            "background. In addition, the intensities will be multiplied to obtain\n"
-                                            "an overall median intensity of 1."):
-        return
-
-    intensity_keys = _prompt_intensity_keys(window)
-    for tab in window.get_gui_experiment().get_active_tabs():
-        experiment = tab.experiment
-        for intensity_key in intensity_keys:
-            intensity_calculator.perform_intensity_normalization(experiment, background_correction=True,
-                                                                 z_correction=False, intensity_key=intensity_key)
         tab.undo_redo.mark_unsaved_changes()
 
 
@@ -107,10 +87,10 @@ def _normalize_with_time(window: Window):
 
 
 
-def _normalize_without_background(window: Window):
+def _normalize_without_corrections(window: Window):
     _verify_saved_intensities(window)
-    if not dialog.popup_message_cancellable("Normalization", "All intensities will be normalized. No background\n"
-                                            "correction is used. Still, the intensities will be multiplied to\n"
+    if not dialog.popup_message_cancellable("Normalization", "All intensities will be normalized."
+                                            "\nThe intensities will be multiplied to\n"
                                             "obtain an overall median intensity of 1."):
         return
 
@@ -124,8 +104,8 @@ def _normalize_without_background(window: Window):
 
 def _remove_normalization(window: Window):
     _verify_saved_intensities(window)
-    if not dialog.popup_message_cancellable("Normalization", "The normalization will be removed, so that script will\n"
-                                                             "use the raw values again."):
+    if not dialog.popup_message_cancellable("Normalization", "The normalization will be removed, so that"
+                                                             " only a background correction (if any) will remain."):
         return
 
     intensity_keys = _prompt_intensity_keys(window)

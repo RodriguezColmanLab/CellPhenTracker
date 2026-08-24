@@ -126,7 +126,7 @@ class _SphereSegmentationVisualizer(ExitableImageVisualizer):
         }
 
     def _set_channel(self):
-        """Prompts the user for a new value of self._channel1."""
+        """Prompts the user for a new value of self._measurement_channel."""
         current_channel = self._window.display_settings.image_channel
         if self._measurement_channel is not None:
             current_channel = self._measurement_channel
