@@ -5,5 +5,5 @@
 *.pyc
 
 # Documentation output
-manuals/_build/
-manuals/_static/
+docs/_build/
+docs/_static/
