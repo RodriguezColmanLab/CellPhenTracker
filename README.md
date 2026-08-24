@@ -44,8 +44,4 @@ Now a new menu will appear: the `Intensity` menu. From this menu, you can first 
 
 ## Documentation
 
-* [Segmentation](segmentation.md)
-* [Recording intensities](recording_intensities.md)
-* [Background corrections](background_corrections.md)
-* [Normalizing intensities](normalizing_intensities.md)
-* [Ratiometric intensities](ratiometric_intensities.md)
+Please see the [CellPhenTracker documentation](https://rodriguezcolmanlab.github.io/CellPhenTracker/). The documentation provides detailed information on how to use the software, including segmentation, recording intensities, background corrections, normalizing intensities, and ratiometric intensities..

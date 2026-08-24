@@ -8,7 +8,7 @@
 
 from datetime import date
 project = 'CellPhenTracker'
-copyright = f'2023-{date.today().year}, UMC Utrecht'
+copyright = f'2023-{date.today().year}, Rodríguez Colman lab, UMC Utrecht'
 author = 'Rutger Kok'
 
 # -- General configuration ---------------------------------------------------
