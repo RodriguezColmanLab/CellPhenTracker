@@ -1,28 +1,30 @@
 # CellPhenTracker
 
-Collection of plugins for OrganoidTracker to measure fluorescent cells.
+**[View documentation](https://rodriguezcolmanlab.github.io/CellPhenTracker/)**
 
-The idea is that you already have a set of positions from OrganoidTracker, and that you can then measure an intensity for each of these positions.
+Collection of plugins for OrganoidTracker to measure fluorescence. Integrates with existing cell tracking data, and allows you to measure intensities in a variety of ways, normalize them, and plot them.
 
 ## Features
 
-Ways of measuring intensity:
+### Ways of measuring intensity:
 
-* Using a circle or sphere of a set radius.
+* Using a circle or sphere of a set radius around existing cell positions.
 * Using a vertex model: every pixel is assigned to the closest cell position.
 * Using an existing segmentation image, obtained by some external program.
 * Using existing metadata, obtained by some other plugin or program.
 * Using the built-in scaled Cellpose-SAM-based segmentation method.
-* You can store multiple intensities, all under their own name.
+* Using the built-in intensity threshold-based segmentation method.
 
-Ways of normalizing intensity:
+You can store multiple intensities, all under their own name.
+
+### Ways of normalizing intensity:
 
 * Multiply all intensities with a single factor so that the median is 1.
 * Do a background correction: the background per pixel is set such that the lowest intensity is 0.
 * Do a Z correction or time correction: for every Z-layer or time frame, all intensities must have a median of 1.
 * All normalizations are stored separately from the raw intensities, and can be undone at any moment.
 
-Ways of plotting intensities:
+### Ways of plotting intensities:
 
 * Plot the intensities over time to check for bleaching.
 * Plot the intensities by Z-layer to check for scattering.
@@ -31,7 +33,7 @@ Ways of plotting intensities:
 * Plot a lineage tree colored by intensity.
 * Plot the intensities for a single selected cell (or multiple) over time.
 
-Exports:
+### Exports:
 
 * CSV/TSV file with time points in rows, cells in columns.
 * CSV/TSV file with cells at a single time point in rows, and intensities in columns.
