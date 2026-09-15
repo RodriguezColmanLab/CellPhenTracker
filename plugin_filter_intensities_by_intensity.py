@@ -17,8 +17,17 @@ def get_menu_items(window: Window) -> dict[str, Any]:
         "Intensity//Record-Filter intensities//By intensity...": lambda: _view_intensity_filtering(window)
     }
 
+def _get_available_intensity_keys(window: Window) -> set[str]:
+    intensity_keys = set()
+    for experiment in window.get_active_experiments():
+        intensity_keys.update(intensity_calculator.get_intensity_keys(experiment))
+    return intensity_keys
+
 
 def _view_intensity_filtering(window: Window):
+    if len(_get_available_intensity_keys(window)) == 0:
+        raise UserError("No intensities available", "No intensities have been recorded yet, so we cannot filter."
+                        " Please record some intensities first, and then try again.")
     activate(_IntensityFilteringVisualizer(window))
 
 
@@ -66,12 +75,6 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
             # immediately filtered out
             self._min_intensity = min(intensities) * 0.66
             self._max_intensity = max(intensities) * 1.5
-
-    def _get_available_intensity_keys(self) -> set[str]:
-        intensity_keys = set()
-        for experiment in self._window.get_active_experiments():
-            intensity_keys.update(intensity_calculator.get_intensity_keys(experiment))
-        return intensity_keys
 
     def _remove_intensities_outside_range(self):
         if not dialog.popup_message_cancellable("Intensity filtering",
@@ -276,7 +279,7 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
             "Parameters//Intensity-Set per pixel...": self._set_per_pixel,
         }
 
-        intensity_keys = self._get_available_intensity_keys()
+        intensity_keys = _get_available_intensity_keys(self._window)
         if len(intensity_keys) > 1:
             # Add a menu to select the intensity key
             for intensity_key in intensity_keys:
@@ -284,7 +287,7 @@ class _IntensityFilteringVisualizer(ExitableImageVisualizer):
         return menu_options
 
     def _get_intensity_key(self) -> str:
-        intensity_keys = self._get_available_intensity_keys()
+        intensity_keys = _get_available_intensity_keys(self._window)
         if len(intensity_keys) == 1:
             # Ignore selection if we only have one option
             return next(iter(intensity_keys))
