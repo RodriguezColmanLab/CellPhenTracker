@@ -95,7 +95,10 @@ class _IntensityInColorPlotter(ExitableImageVisualizer):
         intensity = intensity_calculator.get_normalized_intensity(self._experiment, position, intensity_key=self._intensity_key, per_pixel=self._per_pixel)
         if intensity is None:
             return False
-        scaled_intensity = (intensity - self._minimum_intensity) / (self._maximum_intensity - self._minimum_intensity)
+        if self._minimum_intensity == self._maximum_intensity:
+            scaled_intensity = 0.5  # Avoid division by zero; use a neutral color
+        else:
+            scaled_intensity = (intensity - self._minimum_intensity) / (self._maximum_intensity - self._minimum_intensity)
         color = self._intensity_colormap(scaled_intensity)
         self._ax.plot(position.x, position.y, 'o', markersize=marker_size, color=color, markeredgecolor=color, markeredgewidth=5)
         return False
