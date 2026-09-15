@@ -1,0 +1,317 @@
+from functools import partial
+from typing import Any
+
+from organoid_tracker.core import UserError
+from organoid_tracker.core.experiment import Experiment
+from organoid_tracker.core.links import LinkingTrack
+from organoid_tracker.core.position import Position
+from organoid_tracker.gui import dialog
+from organoid_tracker.gui.window import Window
+from organoid_tracker.position_analysis import intensity_calculator
+from organoid_tracker.visualizer import activate
+from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
+
+
+def get_menu_items(window: Window) -> dict[str, Any]:
+    return {
+        "Intensity//Record-Filter intensities//By volume...": lambda: _view_volume_filtering(window)
+    }
+
+def _get_available_intensity_keys(window: Window) -> set[str]:
+    intensity_keys = set()
+    for experiment in window.get_active_experiments():
+        intensity_keys.update(intensity_calculator.get_regular_intensity_keys(experiment))
+    return intensity_keys
+
+def _view_volume_filtering(window: Window):
+    if len(_get_available_intensity_keys(window)) == 0:
+        raise UserError("No intensities available", "No intensities have been recorded yet, so we cannot filter."
+                        " Please record some intensities first, and then try again.")
+    activate(_IntensityFilteringVisualizer(window))
+
+
+def _remove_intensity_of_position(experiment: Experiment, position: Position, intensity_key: str):
+    experiment.positions.set_position_data(position, intensity_key, None)
+    experiment.positions.set_position_data(position, intensity_key + "_volume", None)
+
+
+def _remove_intensities_of_track(experiment: Experiment, track: LinkingTrack, intensity_key: str):
+    for position in track.positions():
+        _remove_intensity_of_position(experiment, position, intensity_key)
+
+
+class _IntensityFilteringVisualizer(ExitableImageVisualizer):
+    """You can use this screen to filter out measurement volumes outside of a certain range. This is useful for example to
+    filter out smallest cells (useful for filtering debris). We only filter out on the track level,
+    so either all intensities of a track are filtered out, or none. You can set at which percentage of outlier
+    intensities, the entire track is filtered out.
+
+    Use the Parameters menu to set the intensity range, and then use the Edit menu to apply the filtering.
+    """
+
+    _intensity_key: str = "intensity"
+    _min_volume: float = 0
+    _max_volume: float = 1
+    _max_percentage_per_track: float = 50
+    _per_pixel: bool = False
+
+    def __init__(self, window: Window):
+        super().__init__(window)
+
+        self._auto_adjust_min_max()
+
+    def _auto_adjust_min_max(self):
+        """Sets a default min and max intensity based on the intensities in this time point,
+        so that the user has a good starting point for filtering."""
+        intensity_key = self._get_intensity_key()
+        intensity_volumes = []
+        positions = self._experiment.positions
+        for position in positions.of_time_point(self._time_point):
+            intensity_volume = positions.get_position_data(position, intensity_key + "_volume")
+            if intensity_volume is not None:
+                intensity_volumes.append(intensity_volume)
+        if len(intensity_volumes) > 0:
+            # Set a wider range, so that volumes from other time points that are higher or lower, are not
+            # immediately filtered out
+            self._min_volume = min(intensity_volumes) * 0.66
+            self._max_volume = max(intensity_volumes) * 1.5
+
+    def _remove_intensities_outside_range(self):
+        if not dialog.popup_message_cancellable("Intensity filtering",
+                                                f"Are you sure you want to filter out volumes outside the range? You cannot undo this action."):
+            return
+
+        intensity_key = self._get_intensity_key()
+
+        track_removed_count = 0
+        position_removed_count = 0
+        for tab in self._window.get_gui_experiment().get_active_tabs():
+            experiment = tab.experiment
+            for track in experiment.links.find_all_tracks():
+                if self._should_remove_track(experiment, intensity_key, track):
+                    # Too many intensities are out of range, filter out the entire track
+                    _remove_intensities_of_track(experiment, track, intensity_key)
+                    track_removed_count += 1
+            if self._max_percentage_per_track >= 50:
+                # Also remove lone positions
+                links = experiment.links
+                for time_point in experiment.positions.time_points():
+                    for position in experiment.positions.of_time_point(time_point):
+                        if links.get_track(position) is not None:
+                            continue  # Not a position without links
+                        intensity = experiment.positions.get_position_data(position, intensity_key + "_volume")
+                        if intensity is not None and (intensity < self._min_volume or intensity > self._max_volume):
+                            _remove_intensity_of_position(experiment, position, intensity_key)
+                            position_removed_count += 1
+            tab.undo_redo.clear()
+
+        if track_removed_count > 0:
+            message = f"Removed intensities of {track_removed_count} tracks that had more than "
+            f"{self._max_percentage_per_track:.0f}% of their intensities outside the range "
+            f"[{self._min_volume:.2f}, {self._max_volume:.2f}]."
+            if position_removed_count > 0:
+                message += f" In addition, removed intensities of {position_removed_count} positions not part of a track."
+        elif position_removed_count > 0:
+            message = f"Removed intensities of {position_removed_count} positions that had more than "
+            f"{self._max_percentage_per_track:.0f}% of their intensities outside the range "
+            f"[{self._min_volume:.2f}, {self._max_volume:.2f}]."
+        else:
+            message = f"No tracks fell outside the filtering range. No intensities were removed."
+        self.update_status(message)
+
+    def _delete_positions_outside_range(self):
+        if not dialog.popup_message_cancellable("Intensity filtering",
+            f"Are you sure you want fully delete all positions with intensities outside the range?\n\nThis can "
+            f"be quite a destructive action.\nYou cannot undo this action, so make sure you have a backup."):
+            return
+
+        intensity_key = self._get_intensity_key()
+
+        track_removed_count = 0
+        position_removed_count = 0
+        for tab in self._window.get_gui_experiment().get_active_tabs():
+            experiment = tab.experiment
+            positions_to_remove = list()
+            for track in experiment.links.find_all_tracks():
+                if self._should_remove_track(experiment, intensity_key, track):
+                    # Too many intensities are out of range, filter out the entire track
+                    positions_to_remove.extend(track.positions())
+                    track_removed_count += 1
+            if self._max_percentage_per_track >= 50:
+                # Also remove lone positions
+                links = experiment.links
+                for time_point in experiment.positions.time_points():
+                    for position in experiment.positions.of_time_point(time_point):
+                        if links.get_track(position) is not None:
+                            continue  # Not a position without links
+                        intensity = experiment.positions.get_position_data(position, intensity_key + "_volume")
+                        if intensity is not None and (intensity < self._min_volume or intensity > self._max_volume):
+                            positions_to_remove.append(position)
+                            position_removed_count += 1
+            experiment.remove_positions(positions_to_remove)
+            tab.undo_redo.clear()
+
+        if track_removed_count > 0:
+            message = f"Deleted {track_removed_count} tracks that had more than " \
+                f"{self._max_percentage_per_track:.0f}% of their volumes outside the range "\
+                f"[{self._min_volume:.2f}, {self._max_volume:.2f}]."
+            if position_removed_count > 0:
+                message += f" In addition, deleted {position_removed_count} positions not part of a track."
+        elif position_removed_count > 0:
+            message = f"Deleted {position_removed_count} positions that had more than "\
+                f"{self._max_percentage_per_track:.0f}% of their volumes outside the range "\
+                f"[{self._min_volume:.2f}, {self._max_volume:.2f}]."
+        else:
+            message = f"No tracks fell outside the filtering range. No positions were deleted."
+        dialog.popup_message("Filtering result", message)
+
+    def _add_flag_to_positions(self, inside_range: bool):
+        intensity_key = self._get_intensity_key()
+
+        flag_name = dialog.prompt_str("Add flag to positions", "Enter the name of the flag to add to"
+                                      " positions:\n\n(Note: flags are added based on single positions, not the entire"
+                                      " track. So the \"Track filtering percentage\" setting is ignored.)", intensity_key + "_positive")
+        if flag_name is None:
+            return  # User cancelled or entered an empty flag name
+        flag_name = flag_name.strip()
+        if not flag_name:
+            raise UserError("Empty flag name", "Flag name cannot be empty. Please enter a valid flag name.")
+        if flag_name == intensity_key:
+            raise UserError("Forbidden flag name", "Flag name cannot be the same as the intensity key,"
+                                                   " as otherwise all the intensities would get overwritten.")
+
+        position_flagged_count = 0
+        for tab in self._window.get_gui_experiment().get_active_tabs():
+            experiment = tab.experiment
+
+            # Remove any existing flags with the same name, so we don't have duplicates
+            experiment.positions.delete_data_with_name(flag_name)
+
+            # Loop through all positions
+            for time_point in experiment.positions.time_points():
+                positions_to_flag = dict()
+                for position in experiment.positions.of_time_point(time_point):
+                    intensity = experiment.positions.get_position_data(position, intensity_key + "_volume")
+                    if intensity is not None:
+                        position_in_range = intensity < self._min_volume or intensity > self._max_volume
+                        if (inside_range and not position_in_range) or (not inside_range and position_in_range):
+                            positions_to_flag[position] = True
+                            position_flagged_count += 1
+
+                experiment.positions.add_positions_data(flag_name, positions_to_flag)
+            tab.undo_redo.clear()
+
+        if position_flagged_count > 0:
+            message = f"Added flag '{flag_name}' to {position_flagged_count} positions that were "
+            message += "inside" if inside_range else "outside"
+            message += f" the range [{self._min_volume:.2f}, {self._max_volume:.2f}]."
+        else:
+            message = f"No positions fell {'inside' if inside_range else 'outside'} the filtering range. No flags were set."
+        self._window.set_status(message)
+
+    def _should_remove_track(self, experiment: Experiment, intensity_key: str, track: LinkingTrack) -> bool:
+        out_of_range_count = 0
+        total_count = 0
+        for position in track.positions():
+            intensity_volume = experiment.positions.get_position_data(position, intensity_key + "_volume")
+            if intensity_volume is not None:
+                total_count += 1
+                if intensity_volume < self._min_volume or intensity_volume > self._max_volume:
+                    out_of_range_count += 1
+        should_remove_track = total_count > 0 and (
+                    out_of_range_count / total_count) * 100 >= self._max_percentage_per_track
+        return should_remove_track
+
+    def _on_position_draw(self, position: Position, color: str, dz: int, dt: int) -> bool:
+        if dt != 0 or abs(dz) > 2:
+            return True  # Only look at the current time point and z-slice
+
+        intensity_key = self._get_intensity_key()
+
+        intensity_volume: int | None = self._experiment.positions.get_position_data(position, intensity_key + "_volume")
+        if intensity_volume is None:
+            return True  # No intensity for this position, so we don't filter it out
+
+        text_color = "darkred"
+        background_color = (1, 1, 1, 0.8)
+        if self._min_volume <= intensity_volume <= self._max_volume:
+            text_color = "lime"
+            background_color = (0.3, 0.3, 0.3, 0.8)
+
+        if abs(intensity_volume) < 10000:
+            intensity_text = f"{intensity_volume}"
+        elif abs(intensity_volume) < 1_000_000:
+            intensity_text = f"{intensity_volume / 1000:.0f}k"
+        elif abs(intensity_volume) < 1_000_000_000:
+            intensity_text = f"{intensity_volume / 1000_000:.0f}M"
+        else:
+            intensity_text = f"{intensity_volume:.1e}"
+        self._draw_annotation(position, intensity_text, text_color=text_color, background_color=background_color)
+        return False
+
+    def _get_figure_title(self) -> str:
+        return f"Time point {self._time_point.time_point_number()}    (z={self._get_figure_title_z_str()}, " \
+               f"i={self._get_intensity_key()})"
+
+    def get_extra_menu_options(self) -> dict[str, Any]:
+        menu_options = {
+            **super().get_extra_menu_options(),
+            "Edit//Apply-Remove volumes outside range...": self._remove_intensities_outside_range,
+            "Edit//Apply-Delete positions with volumes outside range...": self._delete_positions_outside_range,
+            "Edit//Flag-Add flag to positions inside range...": partial(self._add_flag_to_positions, True),
+            "Edit//Flag-Add flag to positions outside range...": partial(self._add_flag_to_positions, False),
+            "Parameters//Intensity-Set minimum volume...": self._set_min_volume,
+            "Parameters//Intensity-Set maximum volume...": self._set_max_volume,
+            "Parameters//Intensity-Set track filtering percentage...": self._set_max_percentage_per_track,
+        }
+
+        intensity_keys = _get_available_intensity_keys(self._window)
+        if len(intensity_keys) > 1:
+            # Add a menu to select the intensity key
+            for intensity_key in intensity_keys:
+                menu_options["Parameters//Selector-Select intensity//" + intensity_key] = partial(self._set_intensity_key, intensity_key)
+        return menu_options
+
+    def _get_intensity_key(self) -> str:
+        intensity_keys = _get_available_intensity_keys(self._window)
+        if len(intensity_keys) == 1:
+            # Ignore selection if we only have one option
+            return next(iter(intensity_keys))
+        if self._intensity_key not in intensity_keys and len(intensity_keys) > 0:
+            # Key not available, select one from the available keys
+            return next(iter(intensity_keys))
+        return self._intensity_key  # Chose the one the user picked
+
+    def _set_min_volume(self):
+        min_intensity = dialog.prompt_float("Set minimum intensity", "Minimum intensity:", default=self._min_volume, decimals=2)
+        if min_intensity is None:
+            return  # User cancelled
+        self._min_volume = min_intensity
+        self.update_status(f"Minimum intensity set to {self._min_volume:.2f}. If you're happy with the filtering, use the Edit menu to apply the filtering to the experiment.")
+        self.draw_view()
+
+    def _set_max_volume(self):
+        max_intensity = dialog.prompt_float("Set maximum intensity", "Maximum intensity:", default=self._max_volume, decimals=2)
+        if max_intensity is None:
+            return  # User cancelled
+        self._max_volume = max_intensity
+        self.update_status(f"Maximum intensity set to {self._max_volume:.2f}. If you're happy with the filtering, use the Edit menu to apply the filtering to the experiment.")
+        self.draw_view()
+
+    def _set_max_percentage_per_track(self):
+        max_percentage_per_track = dialog.prompt_float("Set track filtering percentage",
+             "At which percentage of time points that fall outside the range, should the entire track be filtered out?",
+             default=self._max_percentage_per_track, decimals=0,
+             minimum=0, maximum=100)
+        if max_percentage_per_track is None:
+            return  # User cancelled
+        self._max_percentage_per_track = max_percentage_per_track
+        self.update_status(f"Track filtering percentage set to {self._max_percentage_per_track:.0f}%.")
+        self.draw_view()
+
+
+    def _set_intensity_key(self, intensity_key: str):
+        self._intensity_key = intensity_key
+        self._auto_adjust_min_max()
+        self.update_status(f"Intensity key set to {intensity_key}.")
+        self.draw_view()
