@@ -1,7 +1,7 @@
 import math
 import random
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import Enum, auto
 from functools import partial
 from typing import Any, Callable
 
@@ -25,6 +25,11 @@ from organoid_tracker.gui.worker_job import WorkerJob
 from organoid_tracker.position_analysis import intensity_calculator
 from organoid_tracker.visualizer import activate
 from organoid_tracker.visualizer.exitable_image_visualizer import ExitableImageVisualizer
+
+
+class _MaskType(Enum):
+    NORMAL = auto()  # The channel containing the segmentations
+    OUTER_MASKS = auto()  # An extra channel is provided to restrict measurements with the enlarged or outer modes
 
 
 class _ExcludeBorderMode(Enum):
@@ -105,6 +110,14 @@ def _expand_slice(original_slice: tuple[slice, slice, slice], image_shape: tuple
     return slice(new_z_start, new_z_stop), slice(new_y_start, new_y_stop), slice(new_x_start, new_x_stop)
 
 
+def _contains_none(iterable: list[Any]) -> bool:
+    """Returns True if the given iterable contains a None value."""
+    for item in iterable:
+        if item is None:
+            return True
+    return False
+
+
 class _MaskProcessingMode(ABC):
 
     @abstractmethod
@@ -120,12 +133,18 @@ class _MaskProcessingMode(ABC):
         process_mask)."""
         raise NotImplementedError()
 
+    def can_use_outer_mask_channel(self) -> bool:
+        """Returns True if it makes sense to provide an outer mask channel for this mode. For measuring
+        "On the outside", the user can provide a channel that contains the outer mask, so that we can measure
+        intensities only in the outer mask. For other modes, this is not needed."""
+        return False
+
     @abstractmethod
-    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, outer_mask_3d: ndarray | None, size_um: float) -> ndarray:
         """Processes a 3D labeled image according to this mode. The labeled_image_3d array must not be modified."""
         raise NotImplementedError()
 
-    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[int], ndarray | None],
+    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[_MaskType, int], ndarray | None],
                         size_um: float, image_z: int) -> ndarray | None:
         """Processes a 2D labeled image at the given Z index. Depending on the mode, this may involve processing
         nearby Z slices as well. labeled_image_getter is a function that will be called with an image Z (so without
@@ -135,7 +154,7 @@ class _MaskProcessingMode(ABC):
         # dilated/erased because it's near the bottom or top of a 3D object
         z_size_extra = int(math.ceil(size_um / resolution.pixel_size_z_um)) if resolution.pixel_size_z_um > 0 else 0
         slice_of_interest = z_size_extra
-        image_2d_stack = [labeled_image_getter(image_z + dz) for dz in range(-z_size_extra, z_size_extra + 1)]
+        image_2d_stack = [labeled_image_getter(_MaskType.NORMAL, image_z + dz) for dz in range(-z_size_extra, z_size_extra + 1)]
 
         # Remove None slices at the start and end (in case we went out of bounds)
         while len(image_2d_stack) > 0 and image_2d_stack[0] is None:
@@ -147,9 +166,18 @@ class _MaskProcessingMode(ABC):
         if slice_of_interest < 0 or slice_of_interest >= len(image_2d_stack):
             return None  # No image here
 
+        # If we can use an outer mask channel in this mode, we need to get the outer mask as well
+        outer_mask_3d = None
+        if self.can_use_outer_mask_channel():
+            first_z = image_z - slice_of_interest
+            outer_mask_2d_stack = [labeled_image_getter(_MaskType.OUTER_MASKS, z) for z in range(first_z, first_z + len(image_2d_stack))]
+            if not _contains_none(outer_mask_2d_stack):
+                outer_mask_3d = numpy.stack(outer_mask_2d_stack, axis=0)
+            del outer_mask_2d_stack
+
         # Process our little 3D stack, return the appropriate slice
         labeled_image_3d = numpy.stack(image_2d_stack, axis=0)
-        processed_3d = self.process_mask_3d(resolution, labeled_image_3d, size_um)
+        processed_3d = self.process_mask_3d(resolution, labeled_image_3d, outer_mask_3d, size_um)
         return processed_3d[slice_of_interest]
 
 
@@ -160,13 +188,13 @@ class _ModeInside(_MaskProcessingMode):
     def get_size_question(self) -> str | None:
         return None
 
-    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, outer_mask_3d: ndarray | None, size_um: float) -> ndarray:
         return labeled_image_3d  # Don't change
 
-    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[int], ndarray | None],
+    def process_mask_2d(self, resolution: ImageResolution, labeled_image_getter: Callable[[_MaskType, int], ndarray | None],
                         size_um: float, image_z: int) -> ndarray | None:
         # No need to process nearby slices
-        return labeled_image_getter(image_z)
+        return labeled_image_getter(_MaskType.NORMAL, image_z)
 
 
 class _ModeShrunken(_MaskProcessingMode):
@@ -176,7 +204,7 @@ class _ModeShrunken(_MaskProcessingMode):
     def get_size_question(self) -> str | None:
         return "By how many micrometers should we shrink the mask (in 3D)?"
 
-    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, outer_mask_3d: ndarray | None, size_um: float) -> ndarray:
         structuring_element = _get_ellipsoid_structure(resolution, labeled_image_3d.shape, size_um)
 
         output_array = numpy.zeros_like(labeled_image_3d)
@@ -194,7 +222,10 @@ class _ModeEnlarged(_MaskProcessingMode):
     def get_size_question(self) -> str | None:
         return "By how many micrometers should we enlarge each mask (in 3D)?"
 
-    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
+    def can_use_outer_mask_channel(self) -> bool:
+        return True
+
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, outer_mask_3d: ndarray | None, size_um: float) -> ndarray:
         structuring_element = _get_ellipsoid_structure(resolution, labeled_image_3d.shape, size_um)
 
         output_array = numpy.zeros_like(labeled_image_3d)
@@ -207,6 +238,10 @@ class _ModeEnlarged(_MaskProcessingMode):
         # Ensure the original labels remain, and are not overwritten by neighboring dilations
         output_array[labeled_image_3d != 0] = labeled_image_3d[labeled_image_3d != 0]
 
+        if outer_mask_3d is not None:
+            # If an outer mask is provided, we should only keep the dilated labels that are within the outer mask
+            output_array[outer_mask_3d == 0] = 0
+
         return output_array
 
 
@@ -217,7 +252,10 @@ class _ModeOutside(_MaskProcessingMode):
     def get_size_question(self) -> str | None:
         return "How many micrometers should we measure outside the mask?"
 
-    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, size_um: float) -> ndarray:
+    def can_use_outer_mask_channel(self) -> bool:
+        return True
+
+    def process_mask_3d(self, resolution: ImageResolution, labeled_image_3d: ndarray, outer_mask_3d: ndarray | None, size_um: float) -> ndarray:
         structuring_element = _get_ellipsoid_structure(resolution, labeled_image_3d.shape, size_um)
 
         # Fill the output array with dilated masks
@@ -230,6 +268,11 @@ class _ModeOutside(_MaskProcessingMode):
 
         # Remove original masks, so that only the dilated part remains
         output_array[labeled_image_3d != 0] = 0
+
+        if outer_mask_3d is not None:
+            # If an outer mask is provided, we should only keep the dilated labels that are within the outer mask
+            output_array[outer_mask_3d == 0] = 0
+
         return output_array
 
 
@@ -295,17 +338,19 @@ class _RecordIntensitiesJob(WorkerJob):
     """Records the intensities of all positions."""
 
     _segmentation_channel: ImageChannel
-    _measurement_channel_1: ImageChannel
+    _measurement_channel: ImageChannel
+    _outer_mask_channel: ImageChannel | None
     _mask_processing_mode: _MaskProcessingMode
     _mask_processing_size_um: float
     _intensity_key: str
     _border_exclusion_mode: _ExcludeBorderMode
 
-    def __init__(self, segmentation_channel: ImageChannel, measurement_channel_1: ImageChannel,
-                 *, mask_processing_mode: _MaskProcessingMode,
+    def __init__(self, segmentation_channel: ImageChannel, measurement_channel: ImageChannel,
+                 *, outer_mask_channel: ImageChannel | None, mask_processing_mode: _MaskProcessingMode,
                  mask_processing_size_um: float, intensity_key: str, border_exclusion_mode: _ExcludeBorderMode):
         self._segmentation_channel = segmentation_channel
-        self._measurement_channel_1 = measurement_channel_1
+        self._measurement_channel = measurement_channel
+        self._outer_mask_channel = outer_mask_channel
         self._mask_processing_mode = mask_processing_mode
         self._mask_processing_size_um = mask_processing_size_um
         self._intensity_key = intensity_key
@@ -325,7 +370,10 @@ class _RecordIntensitiesJob(WorkerJob):
 
             # Load images
             label_image = experiment_copy.images.get_image(time_point, self._segmentation_channel)
-            measurement_image = experiment_copy.images.get_image(time_point, self._measurement_channel_1)
+            measurement_image = experiment_copy.images.get_image(time_point, self._measurement_channel)
+            outer_mask_image = None
+            if self._mask_processing_mode.can_use_outer_mask_channel() and self._outer_mask_channel is not None:
+                outer_mask_image = experiment_copy.images.get_image_stack(time_point, self._outer_mask_channel)
 
             if label_image is None or measurement_image is None:
                 continue  # Skip this time point, an image is missing
@@ -335,7 +383,7 @@ class _RecordIntensitiesJob(WorkerJob):
 
             # Calculate intensities
             resolution = experiment_copy.images.resolution()
-            processed_labels = self._mask_processing_mode.process_mask_3d(resolution, processed_labels, self._mask_processing_size_um)
+            processed_labels = self._mask_processing_mode.process_mask_3d(resolution, processed_labels, outer_mask_image, self._mask_processing_size_um)
             props_by_label = _by_label(skimage.measure.regionprops(processed_labels))
             for position in positions:
                 index = label_image.value_at(position)
@@ -369,6 +417,7 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
     """
     _segmented_channel: ImageChannel | None = None
     _measurement_channel: ImageChannel | None = None
+    _outer_mask_channel: ImageChannel | None = None
     _intensity_key: str = intensity_calculator.DEFAULT_INTENSITY_KEY
     _label_colormap: Colormap
     _mask_processing_mode: _MaskProcessingMode = _DEFAULT_PROCESSING_MODE
@@ -401,6 +450,8 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
                 partial(self._set_processing_mode, mode)
         if self._find_missing_positions_experiment() is not None:
             options["Edit//Create positions from segmentation..."] = self._add_positions_from_segmentation
+        if self._mask_processing_mode.can_use_outer_mask_channel():
+            options["Parameters//Channel-Set outer mask channel..."] = self._set_outer_mask_channel
 
         return options
 
@@ -429,8 +480,12 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
 
         self._mask_processing_size_um = new_size
         self._mask_processing_mode = mode
-        self.refresh_data()
-        self._window.set_status("Set the mask processing mode to \"" + mode.get_name() + "\".")
+        self.refresh_all()  # Also updates the menu
+
+        status_text = "Set the mask processing mode to \"" + mode.get_name() + "\"."
+        if mode.can_use_outer_mask_channel():
+            status_text += "\nNote: to restrict where measurements can extend to, you can set an outer mask in the Parameters menu."
+        self._window.set_status(status_text)
 
     def _set_intensity_key(self):
         """Prompts the user for a new intensity key."""
@@ -453,6 +508,22 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
                                               default=current_channel.index_one)
         if new_channel_index is not None:
             self._segmented_channel = ImageChannel(index_one=new_channel_index)
+            self.refresh_data()
+
+    def _set_outer_mask_channel(self):
+        """Prompts the user for a new value of self._outer_mask_channel."""
+        current_channel = self._outer_mask_channel if self._outer_mask_channel is not None else self._display_settings.image_channel
+        channel_count = len(self._find_available_channels())
+
+        new_channel_index = dialog.prompt_int("Select a channel", f"What channel do you want to use"
+                                                                  f" (1-{channel_count}, inclusive)? Set to 0 to disable.", minimum=0,
+                                              maximum=channel_count,
+                                              default=current_channel.index_one)
+        if new_channel_index is not None:
+            if new_channel_index == 0:
+                self._outer_mask_channel = None
+            else:
+                self._outer_mask_channel = ImageChannel(index_one=new_channel_index)
             self.refresh_data()
 
     def _set_measurement_channel_one(self):
@@ -523,7 +594,9 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
 
         worker_job.submit_job(self._window,
                               _RecordIntensitiesJob(self._segmented_channel, self._measurement_channel,
-                                                    intensity_key=self._intensity_key, mask_processing_mode=self._mask_processing_mode,
+                                                    outer_mask_channel=self._outer_mask_channel,
+                                                    intensity_key=self._intensity_key,
+                                                    mask_processing_mode=self._mask_processing_mode,
                                                     mask_processing_size_um=self._mask_processing_size_um,
                                                     border_exclusion_mode=self._exclude_border_mode))
         self.update_status("Started recording all intensities...")
@@ -550,9 +623,12 @@ class _PreexistingSegmentationVisualizer(ExitableImageVisualizer):
         resolution = self._experiment.images.resolution()
         offset_z = self._experiment.images.offsets.of_time_point(time_point).z
         image_z_of_interest = int(round(z + offset_z))
-        def get_image(requested_image_z: int) -> ndarray:
+        def get_image(mask_type: _MaskType, requested_image_z: int) -> ndarray | None:
             requested_z = int(round(requested_image_z - offset_z))
-            return self._experiment.images.get_image_slice_2d(time_point, self._segmented_channel, requested_z)
+            channel = self._segmented_channel if mask_type == _MaskType.NORMAL else self._outer_mask_channel
+            if channel is None:
+                return None
+            return self._experiment.images.get_image_slice_2d(time_point, channel, requested_z)
 
         labels = self._mask_processing_mode.process_mask_2d(resolution, get_image, self._mask_processing_size_um, image_z_of_interest)
         if labels is None:
