@@ -1,8 +1,9 @@
-from collections import defaultdict
+import math
 from collections import defaultdict
 from typing import Any
 
 import numpy
+import scipy.stats
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
@@ -22,25 +23,60 @@ def _draw_intensities_by_z(figure: Figure, intensities_by_name_and_z: dict[str, 
     ax: Axes = figure.gca()
 
     i = 0
-    for intensity_key, values_by_z in intensities_by_name_and_z.items():
-        z_values = numpy.arange(min(values_by_z.keys()), max(values_by_z.keys()) + 1)
-        intensity_means = numpy.full_like(z_values, fill_value=numpy.nan, dtype=numpy.float64)
-        intensity_stds = numpy.full_like(z_values, fill_value=numpy.nan, dtype=numpy.float64)
-        for z, values in values_by_z.items():
-            z_index = z - z_values[0]
-            intensity_means[z_index] = numpy.mean(values)
-            intensity_stds[z_index] = numpy.std(values, ddof=1)
+    overall_min_z = None
+    overall_max_z = None
 
+    random = numpy.random.Generator(numpy.random.MT19937(seed=1))
+    for intensity_key, values_by_z in intensities_by_name_and_z.items():
         color = SANDER_APPROVED_COLORS[i % len(SANDER_APPROVED_COLORS)]
-        ax.plot(z_values, intensity_means, label=intensity_key, color=color, linewidth=3)
-        ax.fill_between(z_values, intensity_means - intensity_stds, intensity_means + intensity_stds, color=color, alpha=0.4)
+
+        min_z = min(values_by_z.keys())
+        max_z = max(values_by_z.keys())
+
+        if overall_min_z is None or min_z < overall_min_z:
+            overall_min_z = min_z
+        if overall_max_z is None or max_z > overall_max_z:
+            overall_max_z = max_z
+
+        r = _plot_logarithmic_fit(ax, values_by_z, color=color)
+        label = f"{intensity_key} (r={r:.2f})" if not math.isnan(r) else intensity_key
+        for z in range(min_z, max_z + 1):
+            if z not in values_by_z:
+                continue
+
+            values = values_by_z[z]
+            ax.scatter(random.normal(loc=z, scale=0.1, size=len(values)), values, label=label if z == min_z else None, color=color, alpha=1, lw=0, s=10)
         i += 1
 
+    if overall_min_z is not None and overall_max_z is not None:
+        ax.set_xticks(range(overall_min_z, overall_max_z + 1), minor=True)
+        width = overall_max_z - overall_min_z
+        ax.set_xlim(overall_min_z - width / 10, overall_max_z + width / 10)
     ax.set_ylabel("Intensity/px (a.u.)")
     ax.set_xlabel("Z (px)")
     if len(intensities_by_name_and_z) > 1:
         ax.legend()
+    figure.tight_layout()
 
+def _plot_logarithmic_fit(ax: Axes, values_by_z: dict[int, list[float]], color: str):
+    if len(values_by_z) < 4:
+        return float("NaN") # Not enough data points to fit a logarithmic curve
+
+    z_values = []
+    intensities_log = []
+    for z, values in values_by_z.items():
+        if min(values) <= 0:
+            return float("NaN") # Cannot take logarithm of non-positive values
+        z_values.extend([z] * len(values))
+        intensities_log.extend([math.log(v) for v in values])
+
+    linear_fit = scipy.stats.linregress(z_values, intensities_log)
+
+    plotting_z_values = numpy.arange(min(z_values), max(z_values) + 1)
+    plotting_intensities = numpy.exp(linear_fit.slope * plotting_z_values + linear_fit.intercept)
+    ax.plot(plotting_z_values, plotting_intensities, color=color, linestyle='--', linewidth=2)
+
+    return linear_fit.rvalue
 
 def _plot_intensities_by_z(window: Window):
     intensities_by_name_and_z = dict()
@@ -57,6 +93,6 @@ def _plot_intensities_by_z(window: Window):
                 z = int(round(position.z))
                 intensities_by_name_and_z[intensity_key][z].append(intensity)
 
-    dialog.popup_figure(window, lambda figure: _draw_intensities_by_z(figure, intensities_by_name_and_z))
+    dialog.popup_figure(window, lambda figure: _draw_intensities_by_z(figure, intensities_by_name_and_z), size_cm=(20, 10))
 
 
